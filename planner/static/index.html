@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Drone Mission Planner</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/cesium@1.123.0/Build/Cesium/Widgets/widgets.css">
+<script src="https://cdn.jsdelivr.net/npm/cesium@1.123.0/Build/Cesium/Cesium.js"></script>
+<script src="plan.js"></script>
+<script src="sim.js"></script>
+<style>
+:root {
+  --bg: #ffffff; --panel: #f6f7f9; --fg: #15181d; --muted: #5d6673; --line: #dde1e6;
+  --accent: #1f6feb; --ok: #1a7f37; --warn: #b35900; --bad: #c62828;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1216; --panel: #161a20; --fg: #e8ebef; --muted: #98a2ad; --line: #2a3038;
+    --accent: #4c8dff; --ok: #3fb950; --warn: #e3a03a; --bad: #f05a5a;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1216; --panel: #161a20; --fg: #e8ebef; --muted: #98a2ad; --line: #2a3038;
+  --accent: #4c8dff; --ok: #3fb950; --warn: #e3a03a; --bad: #f05a5a;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, -apple-system, sans-serif; }
+#app { display: flex; height: 100%; }
+#side { width: 340px; flex: none; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--line); padding: 14px 16px 24px; }
+#map { flex: 1; position: relative; min-width: 0; }
+h1 { font-size: 17px; margin: 0 0 2px; }
+.sub { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 6px; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+button { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.on { outline: 2px solid var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+label.f { display: grid; grid-template-columns: 1fr 90px; align-items: center; gap: 8px; margin: 4px 0; }
+input, select { font: inherit; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); width: 100%; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; flex: 1; }
+.seg button.on { outline: none; background: var(--accent); color: #fff; }
+ol#pins { padding-left: 20px; margin: 4px 0; }
+ol#pins li { margin: 4px 0; }
+.pin { display: flex; gap: 6px; align-items: center; }
+.pin input { width: 64px; padding: 4px 6px; }
+.pin button { padding: 2px 8px; }
+.muted { color: var(--muted); }
+#status { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); margin-top: 10px; white-space: pre-wrap; }
+#status.warn { border-color: var(--warn); }
+#status.bad { border-color: var(--bad); }
+.legend span { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin: 0 4px 0 10px; vertical-align: middle; }
+#hint { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.7); color: #fff; padding: 6px 12px; border-radius: 8px; font-size: 13px; pointer-events: none; z-index: 2; }
+.cesium-viewer-bottom { display: none; }
+.tabs { display: flex; gap: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+.tabs button { flex: 1; border: 0; border-radius: 0; }
+.tabs button.on { outline: none; background: var(--accent); color: #fff; }
+#simView { flex: 1; min-width: 0; display: flex; flex-direction: column; background: #111; }
+#simView[hidden], #map[hidden] { display: none; }
+#simCanvas { flex: 1; width: 100%; min-height: 0; cursor: crosshair; display: block; }
+#simFrame { height: 45%; width: 100%; border: 0; border-top: 1px solid #333; background: #000; }
+#simBar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; color: #ddd; font-size: 12px; background: #1a1d22; }
+#simBar input[type=range] { flex: 1; }
+#simStatus { font-size: 13px; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); margin-top: 10px; white-space: pre-wrap; }
+#simStatus.warn { border-color: var(--warn); } #simStatus.bad { border-color: var(--bad); }
+#simLaunch:not(:disabled) { background: var(--ok); border-color: var(--ok); color: #fff; }
+@media (max-width: 760px) {
+  #app { flex-direction: column-reverse; }
+  #side { width: 100%; height: 46%; border-right: 0; border-top: 1px solid var(--line); padding: 10px 16px 20px; }
+  #map { height: 54%; flex: none; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="side">
+    <h1>Drone Mission Planner</h1>
+    <div class="sub">DJI Mini 3 · loop from home, building-aware</div>
+    <div class="tabs"><button id="tabMap" class="on">Map mission</button><button id="tabSim">House sim</button></div>
+    <div id="mapPane">
+
+    <div class="row">
+      <button id="locate" class="primary">Locate me</button>
+      <button id="addMode">Add pins</button>
+      <button id="undo">Undo pin</button>
+      <button id="clear">Clear</button>
+    </div>
+    <div class="row">
+      <input id="q" placeholder="Search address…" style="flex:1">
+      <button id="search">Go</button>
+    </div>
+
+    <h2>Waypoints</h2>
+    <div class="muted" id="homeTxt">Home: not set. Tap "Locate me" or click the map with Add pins on (first pin is home).</div>
+    <ol id="pins"></ol>
+
+    <h2>Limits</h2>
+    <label class="f">Ceiling (LAANC), m <input id="ceiling" type="number" value="60" min="10" max="120"></label>
+    <label class="f">Default altitude, m <input id="defAlt" type="number" value="12" min="5" max="120"></label>
+    <label class="f">Min altitude, m <input id="minAlt" type="number" value="8" min="5" max="120"></label>
+    <label class="f">Horizontal clearance, m <input id="clearH" type="number" value="8" min="2" max="50"></label>
+    <label class="f">Vertical clearance, m <input id="clearV" type="number" value="5" min="2" max="50"></label>
+    <label class="f">Unknown building height, m <input id="unkH" type="number" value="7" min="3" max="100"></label>
+    <label class="f">Cruise speed, m/s <input id="speed" type="number" value="5" min="1" max="10" step="0.5"></label>
+
+    <h2>When the obstacle monitor stops the drone</h2>
+    <div class="seg" id="handoff">
+      <button data-v="human" class="on">Hand to me</button>
+      <button data-v="policy">Hand to policy</button>
+    </div>
+    <div class="muted" style="font-size:12px;margin-top:4px">RC sticks always override either mode.</div>
+
+    <h2>Plan</h2>
+    <div class="row">
+      <button id="planBtn" class="primary">Load buildings &amp; plan</button>
+      <button id="save">Save mission</button>
+      <button id="dl">Download JSON</button>
+    </div>
+    <div class="row"><button id="loadLatest">Load latest saved</button></div>
+    <div class="legend muted" style="font-size:12px">
+      <span style="background:#9aa4b1"></span>building
+      <span style="background:#e3a03a"></span>climbed over
+      <span style="background:#f05a5a"></span>above ceiling
+    </div>
+    <div id="status">Ready.</div>
+    </div>
+    <div id="simPane" hidden>
+      <div class="muted" style="font-size:12px">Fly A to B in the splat with the sim's drone model. Plain path planning + controller, no AI.</div>
+      <label class="f">Scene <select id="simScene"></select></label>
+      <label class="f">Altitude for new points &amp; shading, m <input id="simAlt" type="number" value="8" min="1" max="60" step="0.5"></label>
+      <label class="f">Speed, m/s <input id="simSpeed" type="number" value="3" min="0.5" max="10" step="0.5"></label>
+      <label class="f">Flight style <select id="simStyle"><option value="normal">Normal (stops, pivots camera)</option><option value="fpv">FPV (smooth curves, never stops)</option></select></label>
+      <label class="f" id="simFpvRow" hidden>FPV camera tilt, deg <input id="simFpvTilt" type="number" value="-10" min="-90" max="20" step="1"></label>
+      <label class="f">Clearance, m <input id="simClear" type="number" value="1.5" min="0.3" max="10" step="0.1"></label>
+      <label class="f">On obstacle stop <select id="simHandoff"><option value="human">Hand to me</option><option value="policy">Hand to policy</option></select></label>
+      <label style="display:flex;gap:6px;align-items:center;margin:6px 0"><input id="simShowOcc" type="checkbox" checked style="width:auto"> Shade blocked areas (red: too close at this altitude incl. safety margin, orange: no takeoff/landing)</label>
+      <label style="display:flex;gap:6px;align-items:center;margin:6px 0"><input id="simAir" type="checkbox" style="width:auto"> Start and end in the air (skip takeoff/landing)</label>
+      <label style="display:flex;gap:6px;align-items:center;margin:6px 0"><input id="simLoop" type="checkbox" style="width:auto"> Loop back to A (land where it took off)</label>
+      <div class="row"><button id="simUndo">Undo point</button><button id="simClearRoute">Clear route</button></div>
+      <h2>Route points (height each)</h2>
+      <div class="muted" id="simRouteEmpty" style="font-size:12px">Tap the map to place A, then more points.</div>
+      <ol id="simRouteList" style="list-style:none;padding-left:0;margin:4px 0"></ol>
+      <h2>Tap places</h2>
+      <div class="seg" id="simTool"><button data-v="ab" class="on">Route</button><button data-v="poi">Look-at</button><button data-v="measure">Measure</button></div>
+      <h2>Look-at points (camera targets)</h2>
+      <label class="f">New point height, m <input id="simPoiH" type="number" step="0.5" placeholder="ground"></label>
+      <label class="f">Switch targets <select id="simPoiMode"><option value="nearest">Nearest point</option><option value="sequence">In order placed</option></select></label>
+      <div class="muted" id="simPoiEmpty" style="font-size:12px">None: the camera faces the direction of travel.</div>
+      <ol id="simPoiList" style="padding-left:20px;margin:4px 0"></ol>
+      <div class="row"><button id="simPoiClear">Clear look-at points</button>
+        <select id="simColorBy" style="flex:1"><option value="clear">Colour route by clearance</option><option value="poi">Colour route by target</option></select></div>
+      <h2>Real-world alignment</h2>
+      <div class="muted" id="simFitInfo" style="font-size:12px">Splat-to-GPS fit: loading…</div>
+      <label class="f">Scale correction × <input id="simScale" type="number" value="1" min="0.5" max="2" step="0.001"></label>
+      <label class="f">Heading trim, deg <input id="simYawTrim" type="number" value="0" min="-45" max="45" step="0.5"></label>
+      <label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input id="simHeadingOk" type="checkbox" style="width:auto"> Heading checked on site</label>
+      <label style="display:flex;gap:6px;align-items:center;margin:4px 0"><input id="simUseMargin" type="checkbox" checked style="width:auto"> Plan with real-flight safety margin</label>
+      <div class="muted" id="simMarginInfo" style="font-size:12px"></div>
+      <div class="row">
+        <button id="simPreview" class="primary">Plan &amp; preview</button>
+        <button id="simWatch" disabled>Watch in 3D</button>
+        <button id="simWatchFpv" disabled>Watch first-person</button>
+      </div>
+      <div class="row"><button id="simLaunch" disabled>Launch (save mission)</button></div>
+      <div class="muted" id="simLaunchWhy" style="font-size:12px">Preview the path first.</div>
+      <div id="simStatus">Loading scenes…</div>
+    </div>
+  </div>
+  <div id="map"><div id="hint" hidden></div></div>
+  <div id="simView" hidden>
+    <canvas id="simCanvas"></canvas>
+    <div id="simBar"><button id="simPlayPause" style="padding:4px 10px">Play</button><button id="simReplay" style="padding:4px 10px">Restart</button><input id="simScrub" type="range" min="0" max="1" step="0.1" value="0" disabled><span id="simReadout"></span></div>
+    <iframe id="simFrame" hidden title="3D replay"></iframe>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const C = Cesium;
+let viewer, home = null, pins = [], buildings = [], result = null, addMode = false, handoff = 'human';
+const ents = { pins: [], route: [], blds: [] };
+
+function status(msg, cls = '') { const s = $('status'); s.textContent = msg; s.className = cls; }
+function num(id) { return parseFloat($(id).value); }
+function opts() { return { ceiling: num('ceiling'), clearH: num('clearH'), clearV: num('clearV'), minAlt: num('minAlt') }; }
+
+async function initMap() {
+  C.Ion.defaultAccessToken = undefined;
+  let base;
+  try {
+    base = C.ImageryLayer.fromProviderAsync(C.ArcGisMapServerImageryProvider.fromUrl(
+      'https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer'));
+  } catch (e) {
+    base = new C.ImageryLayer(new C.OpenStreetMapImageryProvider({ url: 'https://tile.openstreetmap.org/' }));
+  }
+  viewer = new C.Viewer('map', {
+    baseLayer: base, baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+    navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false, infoBox: false,
+    selectionIndicator: false, terrain: undefined,
+  });
+  viewer.scene.globe.depthTestAgainstTerrain = false;
+  viewer.camera.setView({ destination: C.Cartesian3.fromDegrees(-96.8, 32.78, 4000), orientation: { pitch: C.Math.toRadians(-60) } });
+  const h = new C.ScreenSpaceEventHandler(viewer.scene.canvas);
+  h.setInputAction(e => {
+    if (!addMode || drag.justEnded) { drag.justEnded = false; return; }
+    if (dragTarget(e.position)) return;
+    const cart = viewer.camera.pickEllipsoid(e.position, viewer.scene.globe.ellipsoid);
+    if (!cart) return;
+    const c = C.Cartographic.fromCartesian(cart);
+    addPoint(C.Math.toDegrees(c.latitude), C.Math.toDegrees(c.longitude));
+  }, C.ScreenSpaceEventType.LEFT_CLICK);
+  wireDrag(h);
+}
+
+// ---- dragging: pin head = altitude (vertical drag), ground dot = position ----
+const drag = { active: null, justEnded: false };
+
+function dragTarget(pos) {
+  const picked = viewer.scene.pick(pos);
+  return picked && picked.id && picked.id._drag ? picked.id._drag : null;
+}
+
+function pinAt(i) { return i < 0 ? home : pins[i]; }
+
+function wireDrag(h) {
+  const scene = viewer.scene, canvas = scene.canvas, cam = viewer.camera;
+  h.setInputAction(e => {
+    const t = dragTarget(e.position);
+    if (!t) return;
+    const p = pinAt(t.i);
+    const head = C.Cartesian3.fromDegrees(p.lon, p.lat, t.kind === 'alt' ? p.alt : 0);
+    const dist = C.Cartesian3.distance(cam.positionWC, head);
+    const mpp = dist * 2 * Math.tan(cam.frustum.fovy / 2) / canvas.clientHeight; // metres per screen pixel at the pin
+    drag.active = { ...t, y0: e.position.y, alt0: p.alt, mpp, moved: false };
+    scene.screenSpaceCameraController.enableInputs = false;
+  }, C.ScreenSpaceEventType.LEFT_DOWN);
+
+  h.setInputAction(e => {
+    const d = drag.active;
+    if (!d) {
+      const t = dragTarget(e.endPosition);
+      canvas.style.cursor = t ? (t.kind === 'alt' ? 'ns-resize' : 'move') : '';
+      return;
+    }
+    d.moved = true;
+    const p = pinAt(d.i);
+    if (d.kind === 'alt') {
+      const raw = d.alt0 + (d.y0 - e.endPosition.y) * d.mpp;
+      p.alt = Math.min(num('ceiling'), Math.max(num('minAlt'), Math.round(raw * 2) / 2));
+      $('hint').hidden = false; $('hint').textContent = `Waypoint ${d.i + 1}: ${p.alt} m`;
+    } else {
+      const cart = cam.pickEllipsoid(e.endPosition, scene.globe.ellipsoid);
+      if (!cart) return;
+      const c = C.Cartographic.fromCartesian(cart);
+      p.lat = C.Math.toDegrees(c.latitude); p.lon = C.Math.toDegrees(c.longitude);
+      $('hint').hidden = false; $('hint').textContent = d.i < 0 ? 'Moving home' : `Moving waypoint ${d.i + 1}`;
+    }
+    scene.requestRender();
+  }, C.ScreenSpaceEventType.MOUSE_MOVE);
+
+  h.setInputAction(() => {
+    const d = drag.active;
+    if (!d) return;
+    drag.active = null;
+    drag.justEnded = d.moved;
+    scene.screenSpaceCameraController.enableInputs = true;
+    $('hint').hidden = !addMode;
+    if (addMode) $('hint').textContent = home ? 'Tap the map to add waypoints' : 'Tap the map to set home';
+    if (d.moved) { invalidate(); renderPins(); status('Moved. Press "Load buildings & plan" to re-plan.'); }
+  }, C.ScreenSpaceEventType.LEFT_UP);
+}
+
+function addPoint(lat, lon) {
+  if (!home) home = { lat, lon, alt: num('defAlt') };
+  else pins.push({ lat, lon, alt: num('defAlt') });
+  invalidate(); renderPins();
+}
+
+function flyTo(lat, lon, h = 350) {
+  viewer.camera.flyTo({ destination: C.Cartesian3.fromDegrees(lon, lat - h / 90000, h), orientation: { pitch: C.Math.toRadians(-50) }, duration: 1.2 });
+}
+
+function renderPins() {
+  ents.pins.forEach(e => viewer.entities.remove(e)); ents.pins = [];
+  $('homeTxt').textContent = home ? `Home (takeoff & landing): ${home.lat.toFixed(6)}, ${home.lon.toFixed(6)}. Drag the green dot to move it.` : 'Home: not set. Tap "Locate me" or click the map with Add pins on (first pin is home).';
+  const CB = f => new C.CallbackProperty(f, false);
+  if (home) {
+    const e = viewer.entities.add({ position: CB(() => C.Cartesian3.fromDegrees(home.lon, home.lat, 0)),
+      point: { pixelSize: 14, color: C.Color.LIME, outlineColor: C.Color.BLACK, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      label: { text: 'H', font: 'bold 14px sans-serif', pixelOffset: new C.Cartesian2(0, -18), fillColor: C.Color.WHITE, outlineWidth: 3, style: C.LabelStyle.FILL_AND_OUTLINE, disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+    e._drag = { kind: 'move', i: -1 };
+    ents.pins.push(e);
+  }
+  const ol = $('pins'); ol.innerHTML = '';
+  pins.forEach((p, i) => {
+    const head = viewer.entities.add({ position: CB(() => C.Cartesian3.fromDegrees(p.lon, p.lat, p.alt)),
+      point: { pixelSize: 16, color: C.Color.DODGERBLUE, outlineColor: C.Color.WHITE, outlineWidth: 2, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+      label: { text: CB(() => `${i + 1} · ${p.alt} m`), font: 'bold 13px sans-serif', pixelOffset: new C.Cartesian2(0, -18), fillColor: C.Color.WHITE, outlineWidth: 3, style: C.LabelStyle.FILL_AND_OUTLINE, disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+    head._drag = { kind: 'alt', i };
+    const foot = viewer.entities.add({ position: CB(() => C.Cartesian3.fromDegrees(p.lon, p.lat, 0)),
+      point: { pixelSize: 9, color: C.Color.WHITE, outlineColor: C.Color.BLACK, outlineWidth: 1, disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+    foot._drag = { kind: 'move', i };
+    const stem = viewer.entities.add({ polyline: { positions: CB(() => C.Cartesian3.fromDegreesArrayHeights([p.lon, p.lat, 0, p.lon, p.lat, p.alt])), width: 2, material: C.Color.WHITE.withAlpha(0.7) } });
+    ents.pins.push(head, foot, stem);
+    const li = document.createElement('li');
+    li.innerHTML = `<div class="pin"><span class="muted">${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</span>
+      <input type="number" value="${p.alt}" min="1" max="120" step="0.5" title="altitude m"> m <button title="remove">×</button></div>`;
+    li.querySelector('input').onchange = ev => { p.alt = parseFloat(ev.target.value); invalidate(); renderPins(); };
+    li.querySelector('button').onclick = () => { pins.splice(i, 1); invalidate(); renderPins(); };
+    ol.appendChild(li);
+  });
+}
+
+function invalidate() { result = null; ents.route.forEach(e => viewer.entities.remove(e)); ents.route = []; }
+
+function bbox() {
+  const pts = [home, ...pins];
+  const lats = pts.map(p => p.lat), lons = pts.map(p => p.lon), m = 0.0012;
+  return [Math.min(...lats) - m, Math.min(...lons) - m, Math.max(...lats) + m, Math.max(...lons) + m];
+}
+
+async function loadBuildings() {
+  const [s, w, n, e] = bbox();
+  status('Loading buildings from OpenStreetMap… (first load of an area can take up to a minute)');
+  const r = await fetch(`/api/buildings?bbox=${s.toFixed(5)},${w.toFixed(5)},${n.toFixed(5)},${e.toFixed(5)}`);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || r.status);
+  buildings = Planner.parseBuildings(data, num('unkH'));
+}
+
+function drawBuildings(climbed, tooTall) {
+  ents.blds.forEach(e => viewer.entities.remove(e)); ents.blds = [];
+  for (const b of buildings) {
+    const color = tooTall.has(b.id) ? C.Color.fromCssColorString('#f05a5a') : climbed.has(b.id) ? C.Color.fromCssColorString('#e3a03a') : C.Color.fromCssColorString('#9aa4b1');
+    ents.blds.push(viewer.entities.add({ polygon: {
+      hierarchy: C.Cartesian3.fromDegreesArray(b.ring.flatMap(([la, lo]) => [lo, la])),
+      height: 0, extrudedHeight: b.height, material: color.withAlpha(b.estimated ? 0.45 : 0.7), outline: false } }));
+  }
+}
+
+function drawRoute() {
+  invalidateRouteOnly();
+  const r = result.route;
+  for (const l of result.legs) {
+    const a = r[l.from], b = r[l.to];
+    ents.route.push(viewer.entities.add({ polyline: {
+      positions: C.Cartesian3.fromDegreesArrayHeights([a.lon, a.lat, a.alt, a.lon, a.lat, l.alt, b.lon, b.lat, l.alt, b.lon, b.lat, b.alt]),
+      width: 4, material: new C.PolylineOutlineMaterialProperty({ color: l.reason.includes('BLOCKED') ? C.Color.RED : C.Color.CYAN, outlineColor: C.Color.BLACK, outlineWidth: 1 }) } }));
+  }
+  r.filter(p => p.kind === 'detour').forEach(p => ents.route.push(viewer.entities.add({
+    position: C.Cartesian3.fromDegrees(p.lon, p.lat, p.alt), point: { pixelSize: 8, color: C.Color.ORANGE } })));
+}
+function invalidateRouteOnly() { ents.route.forEach(e => viewer.entities.remove(e)); ents.route = []; }
+
+async function doPlan() {
+  if (!home || !pins.length) return status('Set home and at least one pin first.', 'warn');
+  try { await loadBuildings(); } catch (e) { buildings = []; status(`Buildings unavailable (${e.message}). Planning without them; avoid by eye.`, 'bad'); }
+  result = Planner.plan(home, pins, buildings, opts());
+  const climbed = new Set(result.legs.flatMap(l => l.blockers));
+  const tooTall = new Set(buildings.filter(b => b.height + opts().clearV > opts().ceiling).map(b => b.id));
+  drawBuildings(climbed, tooTall);
+  drawRoute();
+  const st = result.stats, mins = (st.lengthM / num('speed') / 60).toFixed(1);
+  const maxAlt = Math.max(...result.legs.map(l => l.alt));
+  const lines = [`Route ${st.lengthM} m, about ${mins} min at ${num('speed')} m/s. Max altitude ${maxAlt} m.`,
+    `${st.buildings} buildings (${st.estimatedHeights} with estimated height), ${climbed.size} climbed over, ${st.hard} above ceiling.`,
+    ...result.warnings];
+  status(lines.join('\n'), result.warnings.some(w => w.includes('no path') || w.includes('still')) ? 'bad' : result.warnings.length ? 'warn' : '');
+}
+
+function mission() {
+  return {
+    version: 1,
+    name: `loop_${pins.length}wp`,
+    created: new Date().toISOString(),
+    frame: 'AGL relative to takeoff (home); legs flown vertical-then-horizontal',
+    home: { lat: home.lat, lon: home.lon },
+    limits: { ceiling_m: num('ceiling'), min_alt_m: num('minAlt'), clear_h_m: num('clearH'), clear_v_m: num('clearV'), cruise_speed_mps: num('speed'), corridor_m: num('clearH') },
+    obstacle_handoff: handoff,                       // "human" | "policy"
+    failsafe: { on_link_loss: 'return_to_home', on_low_battery_pct: 25, on_rc_input: 'latch_hand_to_rc' },
+    waypoints: pins.map(p => ({ lat: p.lat, lon: p.lon, alt_m: p.alt })),
+    route: result.route.map(p => ({ lat: +p.lat.toFixed(7), lon: +p.lon.toFixed(7), alt_m: p.alt, kind: p.kind })),
+    legs: result.legs.map(l => ({ from: l.from, to: l.to, alt_m: l.alt, length_m: l.length, reason: l.reason })),
+    buildings_source: buildings.length ? 'openstreetmap' : 'none',
+    warnings: result.warnings,
+  };
+}
+
+async function save() {
+  if (!result) await doPlan();
+  if (!result) return;
+  const r = await fetch('/api/missions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mission()) });
+  const d = await r.json();
+  status(r.ok ? `Saved ${d.name}. The phone loads it from /api/missions/latest.` : `Save failed: ${d.error}`, r.ok ? '' : 'bad');
+}
+
+async function loadLatest() {
+  const r = await fetch('/api/missions/latest');
+  if (!r.ok) return status('No saved mission yet.', 'warn');
+  const m = await r.json();
+  home = { lat: m.home.lat, lon: m.home.lon, alt: m.limits.min_alt_m };
+  pins = m.waypoints.map(w => ({ lat: w.lat, lon: w.lon, alt: w.alt_m }));
+  $('ceiling').value = m.limits.ceiling_m; $('minAlt').value = m.limits.min_alt_m;
+  $('clearH').value = m.limits.clear_h_m; $('clearV').value = m.limits.clear_v_m; $('speed').value = m.limits.cruise_speed_mps;
+  setHandoff(m.obstacle_handoff);
+  invalidate(); renderPins(); flyTo(home.lat, home.lon); await doPlan();
+}
+
+function setHandoff(v) { handoff = v; document.querySelectorAll('#handoff button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); }
+
+function wire() {
+  $('locate').onclick = () => {
+    if (!navigator.geolocation) return status('Location not available in this browser.', 'bad');
+    status('Locating…');
+    navigator.geolocation.getCurrentPosition(p => {
+      const { latitude: lat, longitude: lon, accuracy } = p.coords;
+      if (!home) { home = { lat, lon, alt: num('defAlt') }; invalidate(); renderPins(); }
+      flyTo(lat, lon); status(`Located (±${Math.round(accuracy)} m). ${pins.length ? '' : 'Home set here. Turn on Add pins and tap the map.'}`);
+    }, e => status(`Location failed: ${e.message}. Use search or click the map.`, 'bad'), { enableHighAccuracy: true, timeout: 15000 });
+  };
+  $('addMode').onclick = () => { addMode = !addMode; $('addMode').classList.toggle('on', addMode); $('hint').hidden = !addMode; $('hint').textContent = home ? 'Tap the map to add waypoints' : 'Tap the map to set home'; };
+  $('undo').onclick = () => { if (pins.length) pins.pop(); else home = null; invalidate(); renderPins(); };
+  $('clear').onclick = () => { home = null; pins = []; buildings = []; invalidate(); drawBuildings(new Set(), new Set()); renderPins(); status('Cleared.'); };
+  $('search').onclick = async () => {
+    const q = $('q').value.trim(); if (!q) return;
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(q)}`);
+    const d = await r.json();
+    if (!d.length) return status('Address not found.', 'warn');
+    flyTo(parseFloat(d[0].lat), parseFloat(d[0].lon));
+  };
+  $('q').onkeydown = e => { if (e.key === 'Enter') $('search').click(); };
+  document.querySelectorAll('#handoff button').forEach(b => b.onclick = () => setHandoff(b.dataset.v));
+  ['ceiling', 'minAlt', 'clearH', 'clearV', 'unkH'].forEach(id => $(id).onchange = invalidate);
+  $('planBtn').onclick = doPlan;
+  $('save').onclick = save;
+  $('dl').onclick = async () => {
+    if (!result) await doPlan();
+    if (!result) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(mission(), null, 2)], { type: 'application/json' }));
+    a.download = 'mission.json'; a.click();
+  };
+  $('loadLatest').onclick = loadLatest;
+}
+
+function showTab(sim) {
+  $('tabMap').classList.toggle('on', !sim); $('tabSim').classList.toggle('on', sim);
+  $('mapPane').hidden = sim; $('simPane').hidden = !sim;
+  $('map').hidden = sim; $('simView').hidden = !sim;
+  if (sim && !SimTab.started) { SimTab.started = true; SimTab.wire(); SimTab.init(); }
+  if (sim) setTimeout(SimTab.draw, 0);
+}
+$('tabMap').onclick = () => showTab(false);
+$('tabSim').onclick = () => showTab(true);
+if (location.hash === '#sim') showTab(true);
+
+initMap().then(wire).catch(e => status(`Map failed to load: ${e.message}`, 'bad'));
+</script>
+</body>
+</html>

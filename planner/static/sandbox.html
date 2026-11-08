@@ -1,0 +1,1411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Drone">
+<meta name="theme-color" content="#0a0a0b">
+<title>Drone Sandbox</title>
+<style>
+/* Graphite ramp, one accent (the route), toned semantic lights. Glass = blur + low-alpha fill + hairline + top highlight. */
+:root {
+  --bg: #0a0a0b; --fill: rgba(28,28,32,.42); --fill-strong: rgba(36,36,40,.62); --fill-hi: rgba(255,255,255,.10);
+  --hair: rgba(255,255,255,.12); --hair-soft: rgba(255,255,255,.07);
+  --t1: rgba(255,255,255,.94); --t2: rgba(235,235,245,.62); --t3: rgba(235,235,245,.38);
+  --accent: #8cc8ff; --me: #0a84ff;
+  --ok: #7fd1a1; --warn: #f1c97a; --bad: #ff8f80;
+  --blur: blur(28px) saturate(170%);
+  --r-panel: 22px; --r-ctl: 12px; --r-pill: 999px;
+  --shadow: 0 8px 32px rgba(0,0,0,.28);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--t1); font: 15px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased; overscroll-behavior: none; overflow: hidden; }
+.num { font-variant-numeric: tabular-nums; }
+svg.i { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+.glass { background: var(--fill); -webkit-backdrop-filter: var(--blur); backdrop-filter: var(--blur); border: .5px solid var(--hair); box-shadow: inset 0 1px 0 rgba(255,255,255,.10), var(--shadow); }
+button { font: 500 15px/1 -apple-system, system-ui, sans-serif; color: var(--t1); background: transparent; border: 0; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+button[disabled] { opacity: .35; cursor: default; }
+.btn { height: 40px; padding: 0 16px; border-radius: var(--r-ctl); background: var(--fill-hi); border: .5px solid var(--hair-soft); }
+.btn:active, .icon:active { background: rgba(255,255,255,.18); }
+.btn.primary { background: rgba(255,255,255,.92); color: #0b0b0c; border-color: transparent; font-weight: 600; }
+.btn.primary:active { background: #fff; }
+.icon { width: 40px; height: 40px; border-radius: var(--r-pill); }
+
+/* segmented control */
+.seg { display: inline-flex; padding: 2px; border-radius: 11px; background: rgba(118,118,128,.24); gap: 2px; }
+.seg button { height: 30px; padding: 0 14px; border-radius: 9px; font-size: 13px; font-weight: 500; color: var(--t2); }
+.seg button.on { background: rgba(255,255,255,.18); color: var(--t1); box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+
+/* iOS switch */
+input.switch { appearance: none; -webkit-appearance: none; width: 51px; height: 31px; border-radius: 16px; background: rgba(120,120,128,.32); position: relative; margin: 0; transition: background .2s; flex: none; }
+input.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,.25); transition: transform .2s; }
+input.switch:checked { background: var(--ok); }
+input.switch:checked::after { transform: translateX(20px); }
+select, input[type=number] { font: 15px -apple-system, system-ui, sans-serif; color: var(--t2); background: transparent; border: 0; text-align: right; padding: 4px 0; -webkit-appearance: none; appearance: none; }
+input[type=number] { width: 64px; }
+select { padding-right: 2px; }
+
+/* mode switcher */
+#modes { position: fixed; z-index: 30; top: max(10px, env(safe-area-inset-top)); right: max(12px, env(safe-area-inset-right)); border-radius: 14px; padding: 3px; }
+#modes .seg { background: transparent; }
+.screen { position: fixed; inset: 0; }
+
+/* ---------------- Fly ---------------- */
+#fly { background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
+#video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+html.real body, html.real #fly { background: transparent !important; }
+body.watching .pad, body.watching #editBtn { display: none !important; }
+html.real #video, html.real .pad, html.real #camBtn, html.real #editBtn, html.real #raceBtn { display: none !important; }
+#realBtns { display: flex; gap: 6px; } #realBtns[hidden] { display: none; }
+#ov { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+#fly::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(to bottom, rgba(0,0,0,.28), transparent 22%, transparent 70%, rgba(0,0,0,.30)); }
+#statusCap { position: absolute; z-index: 2; top: max(10px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); border-radius: 16px; padding: 9px 14px 10px; max-width: min(56vw, 520px); }
+#status { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--t3); flex: none; box-shadow: 0 0 0 3px rgba(255,255,255,.06); }
+#status .txt { overflow: hidden; text-overflow: ellipsis; }
+#hud { margin-top: 4px; font: 12px/1.35 ui-monospace, "SF Mono", Menlo, monospace; color: var(--t2); font-variant-numeric: tabular-nums; white-space: pre; }
+#mini { position: absolute; z-index: 2; right: max(12px, env(safe-area-inset-right)); top: calc(max(10px, env(safe-area-inset-top)) + 50px); width: min(168px, max(72px, 30vmin), calc(100dvh - max(10px, env(safe-area-inset-top)) - 50px - min(40vmin, 176px) - max(18px, env(safe-area-inset-bottom)) - 14px)); aspect-ratio: 1; border-radius: 18px; border: .5px solid var(--hair); box-shadow: var(--shadow); background: rgba(0,0,0,.35); }
+#flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; transition: opacity .2s; box-shadow: inset 0 0 0 3px rgba(255,143,128,.7), inset 0 0 80px rgba(255,143,128,.35); }
+.pad { position: absolute; z-index: 2; bottom: max(18px, env(safe-area-inset-bottom)); width: min(40vmin, 176px); aspect-ratio: 1; border-radius: 50%; touch-action: none;
+  background: rgba(255,255,255,.06); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: .5px solid rgba(255,255,255,.22); box-shadow: inset 0 1px 0 rgba(255,255,255,.12); }
+#padL { left: max(22px, env(safe-area-inset-left)); } #padR { right: max(22px, env(safe-area-inset-right)); }
+.pad::before { content: ""; position: absolute; inset: 22%; border-radius: 50%; border: .5px dashed rgba(255,255,255,.14); }
+.pad i { position: absolute; left: 50%; top: 50%; width: 36%; aspect-ratio: 1; margin: -18% 0 0 -18%; border-radius: 50%; background: rgba(255,255,255,.82); box-shadow: 0 4px 14px rgba(0,0,0,.35); pointer-events: none; transition: transform .08s; }
+#dock { position: absolute; z-index: 2; left: 50%; transform: translateX(-50%); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 10px; }
+#flyBtns { display: flex; gap: 2px; padding: 4px; border-radius: var(--r-pill); }
+#flyBtns .icon { width: 44px; height: 40px; }
+#flyBtns #camBtn, #flyBtns #editBtn, #flyBtns #raceBtn, #flyBtns #raceExit, #flyBtns #landBtn, #flyBtns #stopBtn { width: auto; padding: 0 14px; font-size: 13px; font-weight: 500; color: var(--t2); }
+#bigBtn { height: 44px; padding: 0 22px; border-radius: var(--r-pill); font-size: 15px; }
+
+#placeBtns { display: flex; align-items: center; gap: 6px; padding: 5px; border-radius: 18px; }
+#placeBtns .seg button { height: 32px; padding: 0 12px; }
+#placeBtns .stepper { height: 38px; } #placeBtns .stepper button { height: 38px; }
+#placeBtns .btn { height: 38px; padding: 0 14px; font-size: 14px; }
+#tilt { position: absolute; z-index: 2; right: calc(max(22px, env(safe-area-inset-right)) + min(40vmin, 176px) + 14px); bottom: max(18px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border-radius: 22px; }
+#tilt .icon { width: 40px; height: 36px; }
+#tilt span { font-size: 13px; font-weight: 600; }
+#tilt .cap { font-size: 10px; font-weight: 500; color: var(--t3); padding-bottom: 4px; }
+#reticle { position: absolute; z-index: 2; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.8); box-shadow: 0 0 0 1px rgba(0,0,0,.25); pointer-events: none; }
+#reticle::after { content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; }
+body.placing #mini { top: calc(max(10px, env(safe-area-inset-top)) + 50px); }
+
+/* ---------------- Plan ---------------- */
+#plan { background: #000; }
+#mapWrap { position: absolute; inset: 0; overflow: hidden; }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+#pill { position: absolute; z-index: 2; top: max(10px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); max-width: calc(100% - 340px - 260px); height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+#pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--t3); flex: none; }
+#pill.ok .dot { background: var(--ok); } #pill.bad .dot { background: var(--bad); } #pill.busy .dot { background: var(--t2); }
+#pill.bad { color: var(--t1); }
+#mapBtns { position: absolute; z-index: 2; left: max(12px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; }
+#mapBtns button { width: 44px; height: 44px; color: var(--t1); }
+#mapBtns button + button { border-top: .5px solid var(--hair-soft); }
+#mapBtns button.on { color: var(--me); }
+#faaCard { position: absolute; z-index: 2; top: calc(max(10px, env(safe-area-inset-top)) + 46px); left: max(12px, env(safe-area-inset-left)); width: min(330px, calc(100% - 24px)); padding: 12px 14px; border-radius: 16px; font-size: 13px; line-height: 1.4; color: var(--t2); }
+#faaCard b { display: flex; align-items: center; gap: 8px; color: var(--t1); font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+#faaCard b::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--lvl, var(--t3)); }
+#faaCard { max-height: calc(100% - 140px); overflow: auto; }
+#faaCard summary { margin-top: 6px; color: var(--t2); font-size: 12px; cursor: pointer; }
+#faaCard ul { margin: 4px 0 0; padding-left: 16px; color: var(--t3); font-size: 12px; }
+#faaCard .src { margin-top: 6px; font-size: 11px; color: var(--t3); }
+#hLegend { position: absolute; z-index: 2; left: calc(max(12px, env(safe-area-inset-left)) + 54px); bottom: max(14px, env(safe-area-inset-bottom)); padding: 8px 12px; border-radius: 14px; font-size: 11px; color: var(--t2); width: 210px; }
+#hLegend i { display: block; height: 6px; border-radius: 3px; margin: 6px 0 3px; background: linear-gradient(90deg, rgba(110,200,190,.15), rgb(110,200,190), rgb(232,196,110), rgb(232,130,90), rgb(220,80,80)); }
+#hLegend div { display: flex; justify-content: space-between; color: var(--t3); } #hLegend b { font-weight: 500; }
+.speedRow { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; font-size: 14px; color: var(--t2); }
+#placeBtn { position: absolute; z-index: 2; right: calc(max(12px, env(safe-area-inset-right)) + 332px); bottom: max(14px, env(safe-area-inset-bottom)); height: 40px; padding: 0 14px; border-radius: var(--r-pill); font-size: 14px; font-weight: 500; }
+body.sideHidden #side { display: none; }
+body.sideHidden #placeBtn { right: max(12px, env(safe-area-inset-right)); }
+body.sideHidden #pill { max-width: calc(100% - 300px); }
+#sideBtn.on { color: var(--accent); }
+#selBar { position: absolute; z-index: 2; left: calc(max(12px, env(safe-area-inset-left)) + 56px); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 14px; border-radius: 16px; height: 48px; }
+#selBar b { font-size: 14px; font-weight: 600; margin-right: 6px; }
+#selBar .alt { min-width: 52px; text-align: center; font-weight: 600; }
+#selBar .icon { width: 40px; height: 40px; }
+#selBar .del { color: var(--bad); }
+
+#side { position: absolute; z-index: 3; top: calc(max(10px, env(safe-area-inset-top)) + 50px); right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); width: 320px; border-radius: var(--r-panel); display: flex; flex-direction: column; overflow: hidden; }
+#sideScroll { flex: 1; overflow-y: auto; padding: 14px 14px 8px; }
+#sideFoot { padding: 10px 14px 14px; border-top: .5px solid var(--hair-soft); display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+#sideFoot .btn { width: 100%; }
+#side .seg { width: 100%; } #side .seg button { flex: 1; padding: 0 6px; }
+.sub { display: flex; gap: 8px; margin-top: 10px; }
+.sub .btn { flex: 1; height: 34px; padding: 0 8px; font-size: 13px; color: var(--t2); }
+.label { font-size: 12px; color: var(--t3); margin: 16px 2px 6px; }
+#pts { list-style: none; padding: 0; margin: 0; border-radius: 14px; background: rgba(255,255,255,.05); }
+#pts li { display: flex; align-items: center; gap: 10px; height: 46px; padding: 0 6px 0 12px; }
+#pts li + li { border-top: .5px solid var(--hair-soft); }
+#pts li.sel { background: rgba(140,200,255,.10); }
+#pts .tag { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; background: rgba(255,255,255,.88); color: #111; flex: none; }
+#pts .tag.a { background: transparent; color: var(--t1); box-shadow: inset 0 0 0 1.5px var(--t1); }
+#pts .name { flex: 1; font-size: 14px; color: var(--t2); }
+.stepper { display: inline-flex; align-items: center; border-radius: 9px; background: rgba(118,118,128,.24); height: 30px; }
+.stepper button { width: 32px; height: 30px; color: var(--t1); }
+.stepper span { min-width: 46px; text-align: center; font-size: 13px; font-weight: 500; font-variant-numeric: tabular-nums; }
+#pts .x { width: 30px; height: 30px; color: var(--t3); }
+#lib { list-style: none; padding: 0; margin: 0; border-radius: 14px; background: rgba(255,255,255,.05); }
+#lib li { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 0 12px; }
+#lib li + li { border-top: .5px solid var(--hair-soft); }
+#lib .nm { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#lib .meta { font-size: 12px; color: var(--t3); }
+#lib .btn { height: 30px; padding: 0 10px; font-size: 13px; }
+#lib .x { width: 30px; height: 30px; color: var(--t3); }
+#lib li.note { min-height: 0; padding: 10px 12px; font-size: 12px; color: var(--t3); }
+#pts li.note { height: auto; padding: 10px 12px; font-size: 12px; color: var(--t3); }
+#msg { font-size: 13px; color: var(--t2); line-height: 1.45; margin-top: 12px; white-space: pre-wrap; }
+#msg.bad { color: var(--bad); } #msg.ok { color: var(--t1); }
+.hint { font-size: 12px; color: var(--t3); line-height: 1.45; margin: 12px 2px 4px; }
+
+@media (orientation: portrait) {
+  #side { top: auto; left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); width: auto; height: 46dvh; }
+  #pill { max-width: calc(100% - 240px); }
+  #mapBtns { bottom: calc(46dvh + 22px); }
+  #selBar { bottom: calc(46dvh + 22px); }
+  #placeBtn { right: max(10px, env(safe-area-inset-right)); bottom: calc(46dvh + 22px); }
+  #statusCap { max-width: calc(100vw - 250px); }
+}
+
+/* ---------------- Settings (iOS grouped list) ---------------- */
+#settings, #library { background: var(--bg); overflow-y: auto; padding: calc(max(10px, env(safe-area-inset-top)) + 4px) max(20px, env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+#settings .cols, #library .cols { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; align-items: start; }
+@media (orientation: portrait), (max-width: 640px) { #settings .cols, #library .cols { grid-template-columns: 1fr; } }
+#settings h2, #library h2 { font-size: 24px; font-weight: 600; margin: 0; height: 42px; display: flex; align-items: center; grid-column: 1 / -1; padding-right: 260px; }
+#settings h3, #library h3 { font-size: 13px; color: var(--t3); font-weight: 400; margin: 12px 16px 6px; }
+.hrow { display: flex; align-items: center; justify-content: space-between; }
+.hrow .btn { height: 30px; padding: 0 12px; font-size: 13px; }
+ul.rows { list-style: none; padding: 0; margin: 0; }
+ul.rows li { display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 6px 8px 6px 16px; }
+ul.rows li + li { border-top: .5px solid var(--hair-soft); }
+ul.rows .nm { flex: 1; min-width: 0; } ul.rows .nm b { display: block; font-size: 15px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ul.rows .nm small { font-size: 12px; color: var(--t3); font-variant-numeric: tabular-nums; }
+ul.rows .btn { height: 32px; padding: 0 12px; font-size: 13px; }
+ul.rows .btn.primary { color: #0b0b0c; }
+ul.rows .x { width: 32px; height: 32px; color: var(--t3); }
+ul.rows li.note { font-size: 13px; color: var(--t3); }
+.group { background: rgba(255,255,255,.06); border-radius: 14px; overflow: hidden; }
+.set { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 16px; }
+.set + .set { border-top: .5px solid var(--hair-soft); }
+.set > span { flex: 1; font-size: 15px; }
+.set small { display: block; margin-top: 2px; font-size: 12px; color: var(--t3); line-height: 1.4; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6.5" y="5" width="3.5" height="14" rx="1"/><rect x="14" y="5" width="3.5" height="14" rx="1"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5.5v13l11-6.5z"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-locate" viewBox="0 0 24 24"><path d="M3 11l18-8-8 18-2-8z"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12 4l9 5-9 5-9-5z"/><path d="M3 14l9 5 9-5"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/></symbol>
+  <symbol id="i-side" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M15 4v16"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4z"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
+</svg>
+
+<div id="modes" class="glass"><div class="seg"><button data-m="plan">Plan</button><button data-m="fly" class="on">Fly</button><button data-m="library">Library</button><button data-m="settings">Settings</button></div></div>
+
+<!-- ================= FLY ================= -->
+<section class="screen" id="fly">
+  <img id="video" alt="">
+  <canvas id="ov"></canvas>
+  <div id="statusCap" class="glass"><div id="status"><span class="dot"></span><span class="txt">Loading</span></div><div id="hud"></div></div>
+  <canvas id="mini" width="320" height="320"></canvas>
+  <div id="flash"></div>
+  <div id="tilt" class="glass" hidden>
+    <button class="icon" id="tiltUp" aria-label="Tilt up"><svg class="i"><use href="#i-up"/></svg></button>
+    <span id="tiltVal" class="num">-10°</span>
+    <button class="icon" id="tiltDown" aria-label="Tilt down"><svg class="i"><use href="#i-down"/></svg></button>
+    <span class="cap">Gimbal</span>
+  </div>
+  <div id="reticle" hidden></div>
+  <div class="pad" id="padL"><i></i></div>
+  <div class="pad" id="padR"><i></i></div>
+  <div id="dock">
+    <button id="bigBtn" class="btn primary" hidden></button>
+    <div id="placeBtns" class="glass" hidden>
+      <div class="seg" id="kindSeg"><button data-v="route" class="on">Route</button><button data-v="race">Race</button></div>
+      <button id="placeAdd" class="btn primary">Add waypoint</button>
+      <button id="placeLook" class="btn">Look here</button>
+      <button id="gateAdd" class="btn primary" hidden>Add gate</button>
+      <div class="stepper" id="gateSize" hidden><button data-g="-0.5"><svg class="i"><use href="#i-minus"/></svg></button><span id="gateVal">2.5 m</span><button data-g="0.5"><svg class="i"><use href="#i-plus"/></svg></button></div>
+      <button id="raceSave" class="btn" hidden>Save race</button>
+      <button id="placeUndo" class="btn">Undo</button>
+      <button id="placeDone" class="btn">Done</button>
+    </div>
+    <div id="flyBtns" class="glass">
+      <button id="pauseBtn" class="icon" aria-label="Pause"><svg class="i"><use href="#i-pause"/></svg></button>
+      <button id="camBtn" class="icon">First person</button>
+      <button id="editBtn" class="icon">Add points</button>
+      <button id="raceBtn" class="icon" hidden>Race</button>
+      <button id="raceExit" class="icon" hidden>Exit race</button>
+      <span id="realBtns" hidden><button id="landBtn" class="icon">Land</button><button id="stopBtn" class="icon">Stop</button></span>
+      <button id="fsBtn" class="icon" aria-label="Full screen"><svg class="i"><use href="#i-expand"/></svg></button>
+    </div>
+  </div>
+</section>
+
+<!-- ================= PLAN ================= -->
+<section class="screen" id="plan" hidden>
+  <div id="mapWrap">
+    <canvas id="map"></canvas>
+    <div id="pill" class="glass"><span class="dot"></span><span class="t">Tap the map to add waypoints</span></div>
+    <div id="mapBtns" class="glass">
+      <button id="locBtn" aria-label="Locate me"><svg class="i"><use href="#i-locate"/></svg></button>
+      <button id="fitBtn" aria-label="Fit route"><svg class="i"><use href="#i-fit"/></svg></button>
+      <button id="hBtn" aria-label="Safe heights"><svg class="i"><use href="#i-layers"/></svg></button>
+      <button id="faaBtn" aria-label="FAA airspace"><svg class="i"><use href="#i-shield"/></svg></button>
+      <button id="sideBtn" aria-label="Show or hide the panel"><svg class="i"><use href="#i-side"/></svg></button>
+    </div>
+    <button id="placeBtn" class="glass">Place in 3D</button>
+    <div id="faaCard" class="glass" hidden></div>
+    <div id="hLegend" class="glass" hidden><span>Lowest safe height</span><i></i><div><b>2</b><b>10</b><b>20</b><b>30</b><b>40+ m</b></div></div>
+    <div id="selBar" class="glass" hidden></div>
+  </div>
+  <aside id="side" class="glass">
+    <div id="sideScroll">
+      <div class="seg"><button id="toolRoute" class="on">Waypoint</button><button id="toolLook">Look-at</button><button id="toolHere">I'm here</button></div>
+      <div class="sub"><button class="btn" id="undo">Undo</button><button class="btn" id="clear">Clear</button><button class="btn" id="sample">Sample</button><button class="btn" id="aHere">A at me</button></div>
+      <button class="btn" id="place3d" style="width:100%;margin-top:8px">Add from 3D view</button>
+      <div class="speedRow"><span>Speed</span><div class="stepper" id="spdStep"><button data-s="-1" aria-label="Slower"><svg class="i"><use href="#i-minus"/></svg></button><span id="spdVal">4 m/s</span><button data-s="1" aria-label="Faster"><svg class="i"><use href="#i-plus"/></svg></button></div></div>
+      <div class="label" style="display:flex;justify-content:space-between;align-items:center">Route<button class="btn" id="saveRoute" style="height:28px;padding:0 10px;font-size:12px">Save</button></div>
+      <ul id="pts"></ul>
+      <div id="msg">Loading the scene</div>
+      <p class="hint">Tap to add, drag to move, tap a line to insert, tap a point to set its height, pinch to zoom. Shaded areas are blocked at the new-point height. I'm here: tap where you're standing to line the map up with GPS.</p>
+    </div>
+    <div id="sideFoot"><button class="btn" id="sendBtn">Send to drone</button><button class="btn primary" id="go">Fly in sandbox</button></div>
+  </aside>
+</section>
+
+<!-- ================= LIBRARY ================= -->
+<section class="screen" id="library" hidden>
+  <div class="cols">
+    <h2>Library</h2>
+    <div>
+      <h3 class="hrow">Races<button class="btn primary" id="newRace">New race</button></h3>
+      <ul class="group rows" id="libRaces"></ul>
+      <h3>Places</h3>
+      <ul class="group rows" id="libPlaces"></ul>
+    </div>
+    <div>
+      <h3>Routes</h3>
+      <ul class="group rows" id="libRoutes"></ul>
+      <p class="hint" style="margin:12px 16px">Save routes from Plan. Save places with the bookmark on a selected point. Build races by flying through the splat and dropping gates.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ================= SETTINGS ================= -->
+<section class="screen" id="settings" hidden>
+  <div class="cols">
+    <h2>Settings</h2>
+    <div>
+      <h3>Flight</h3>
+      <div class="group">
+        <div class="set"><span>Leaving the live view<small>Hover holds position until you come back</small></span><div class="seg" id="leaveSeg"><button data-v="hover" class="on">Hover</button><button data-v="keep">Keep flying</button></div></div>
+        <div class="set"><span>Speed</span><select id="speed"><option value="1">1 m/s</option><option value="2">2 m/s</option><option value="3">3 m/s</option><option value="4" selected>4 m/s</option><option value="5">5 m/s</option><option value="6">6 m/s</option><option value="8">8 m/s</option><option value="10">10 m/s</option><option value="12">12 m/s</option></select></div>
+        <div class="set"><span>Style<small>FPV flows through turns and ignores look-at points</small></span><select id="style"><option value="normal">Normal</option><option value="fpv">FPV</option></select></div>
+        <div class="set"><span>Loop back to A</span><input type="checkbox" class="switch" id="loop" checked></div>
+        <div class="set"><span>Height for new points</span><input id="alt" type="number" value="10" min="3" max="40" step="1"><span style="flex:none;color:var(--t3)">m</span></div>
+        <div class="set"><span>Current flight</span><button class="btn" id="restart">Restart</button></div>
+      </div>
+      <h3>Scene</h3>
+      <div class="group"><div class="set"><span>Splat</span><select id="scene"></select></div></div>
+    </div>
+    <div>
+      <div id="droneSet" hidden>
+      <h3>Drone</h3>
+      <div class="group">
+        <div class="set"><span>Fly screen drives<small id="droneInfo">Checking the drone</small></span><div class="seg" id="targetSeg"><button data-v="sim" class="on">Sandbox</button><button data-v="real">Real drone</button></div></div>
+        <div class="set"><span>Obstacle AI<small>Shadow only beeps and logs what the policy would do. Live lets it fly the dodge</small></span><div class="seg" id="aiSeg"><button data-v="off">Off</button><button data-v="shadow" class="on">Shadow</button><button data-v="policy">Live</button></div></div>
+        <div class="set"><span>Flight Lab panel<small>Raw telemetry, axis check, capture, test manoeuvres</small></span><button class="btn" id="labBtn">Open</button></div>
+        <div class="set"><span>App<small id="appVer"></small></span><button class="btn" id="diagBtn">Send diagnostics</button><button class="btn" id="updBtn">Check for updates</button><button class="btn" id="reloadBtn">Reload</button></div>
+      </div>
+      </div>
+      <h3>Real world</h3>
+      <div class="group">
+        <div class="set"><span>Real-flight safety margin<small>Side clearance that grows with distance from A, sized to the calibration. Always on for Send to drone</small></span><input type="checkbox" class="switch" id="useMargin" checked></div>
+        <div class="set"><span>Obstacles on the real drone<small>Human hovers and waits for you. Policy lets the learned dodge fly around</small></span><div class="seg" id="handoffSeg"><button data-v="human" class="on">Human</button><button data-v="policy">Policy</button></div></div>
+        <div class="set"><span>Map to GPS calibration<small id="calInfo">No pins yet</small></span><button class="btn" id="calReset">Reset</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  // Each tab flies its own sim drone (the viewer keeps per-sid state; idle sessions expire after 60 s).
+  const SID = (() => { try { let v = sessionStorage.getItem('sb.sid'); if (!v) { v = Math.random().toString(36).slice(2, 10); sessionStorage.setItem('sb.sid', v); } return v; } catch { return Math.random().toString(36).slice(2, 10); } })();
+  const S = {
+    scene: null, scenes: [], geo: null, meta: null, top: new Image(), occ: new Image(), calib: null,
+    pts: [], pois: [], tool: 'route', sel: null, view: null,
+    fly: null, active: null, dirty: true, mode: 'idle',  // idle | flying | paused | manual | done
+    screen: 'fly', leave: 'hover', handoff: 'human', pausedByLeave: false,
+    st: null, sticks: [0, 0, 0, 0], collisions0: 0, cam: 'fpv',
+    me: null, watch: null, placing: false, tilt: -10, sideHidden: false,
+  };
+  const say = (t, cls = '') => { $('msg').textContent = t; $('msg').className = cls; };
+  async function j(url, opts) { const r = await fetch(url, opts); const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = { error: t }; } if (!r.ok) throw new Error(d.error || r.status); return d; }
+  const alt = () => Math.max(3, +$('alt').value || 10);
+  const store = { get: k => { try { return localStorage.getItem('sb.' + k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem('sb.' + k, v); } catch {} } };
+  const D2R = Math.PI / 180;
+
+  // ================= screens =================
+  async function show(name) {
+    if (name === S.screen) return;
+    const from = S.screen; S.screen = name;
+    for (const n of ['fly', 'plan', 'library', 'settings']) $(n).hidden = n !== name;
+    document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.m === name));
+    if (from === 'fly' && S.placing && name !== 'fly') { const wasPlan = S.placeFrom === 'plan'; setPlacingUi(false); S.placeFrom = null; if (wasPlan && S.mode === 'manual') S.mode = 'idle'; invalidate(); }
+    if (S.real) {
+      if (from === 'fly' && S.leave === 'hover' && ['FLYING', 'POLICY'].includes(S.ds?.state)) { S.pausedByLeave = true; FL.pause(); }
+      if (name === 'fly' && S.pausedByLeave) { S.pausedByLeave = false; if (S.ds?.state === 'PAUSED') FL.pause(); }
+    } else
+    if (from === 'fly' && S.leave === 'hover' && S.mode === 'flying') { S.pausedByLeave = true; await pause(); }
+    if (!S.real && name === 'fly' && S.pausedByLeave) {
+      S.pausedByLeave = false;
+      if (S.mode === 'paused') {
+        if (!S.dirty && S.fly === S.active) await pause();          // unchanged: resume
+        else if (S.st?.pos && S.pts.length > 1) await continueFromHere('Route changed: flying the new one from here');
+      }
+    }
+    if (name === 'plan') { setTimeout(() => { if (!S.view) fitView(); drawMap(); }, 30); loadLib(); }
+    if (name === 'settings') renderCal();
+    if (name === 'library') loadLib();
+  }
+  document.querySelectorAll('#modes button').forEach(b => b.onclick = () => show(b.dataset.m));
+  function seg(id, key) {
+    const el = $(id), set = v => { S[key] = v; store.set(key, v); el.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); };
+    el.querySelectorAll('button').forEach(b => b.onclick = () => set(b.dataset.v));
+    set(store.get(key) || S[key]);
+  }
+  seg('leaveSeg', 'leave'); seg('handoffSeg', 'handoff');
+
+  // ================= scene, calibration, geo transforms =================
+  async function init() {
+    try {
+      const d = await j('/sim/api/sim/scenes');
+      S.scenes = (Array.isArray(d) ? d : d.scenes).filter(s => s.name.startsWith('house') || s.geo?.lat0 != null);
+      $('scene').innerHTML = S.scenes.map(s => `<option>${s.name}</option>`).join('');
+      const pref = S.scenes.find(s => s.name === (store.get('scene') || 'house-worldlabs-refined')) || S.scenes[0];
+      $('scene').value = pref.name;
+      await pickScene(pref.name);
+      await loadSample(true);
+    } catch (e) { say(`Sim server not reachable: ${e.message}`, 'bad'); }
+  }
+  async function pickScene(name) {
+    S.scene = name; store.set('scene', name); S.pts = []; S.pois = []; S.sel = null; S.view = null; S.fly = null;
+    S.geo = S.scenes.find(s => s.name === name)?.geo || null;
+    S.meta = await j(`/sim/api/sim/topdown.json?scene=${encodeURIComponent(name)}`);
+    S.top = new Image(); S.top.onload = drawMap; S.top.src = `/sim/api/sim/topdown?scene=${encodeURIComponent(name)}&px=800`;
+    let c = {}; try { c = await j(`/api/calib/${encodeURIComponent(name)}`); } catch {}
+    S.calib = { scale_corr: 1, yaw_trim_deg: 0, offset_e: 0, offset_n: 0, pins: [], ...c };
+    loadOcc(); renderPts(); renderCal();
+    S.hmap = null; S.air = null; loadAirspace();   // always fetched: the FAA ceiling caps point heights even with the card hidden
+    if (S.layers.h) loadHeights();
+  }
+  $('scene').onchange = e => pickScene(e.target.value).then(() => loadSample(false));
+  let occT;
+  function loadOcc() { clearTimeout(occT); occT = setTimeout(() => { S.occ = new Image(); S.occ.onload = drawMap; S.occ.src = `/sim/api/sim/occupancy?scene=${encodeURIComponent(S.scene)}&alt=${alt()}&clear=1.5&px=800`; }, 250); }
+  $('alt').onchange = loadOcc;
+
+  // Scene (x east, y north, splat metres) <-> real east/north metres from the geo origin <-> lat/lon.
+  // real = R(geo yaw + trim) * k * scene + offset ; the offset comes from "I'm here" pins.
+  const hasGeo = () => S.geo && S.geo.lat0 != null;
+  function sceneToEN(x, y) {
+    const c = S.calib, th = ((S.geo?.yaw_deg || 0) + (c.yaw_trim_deg || 0)) * D2R, k = c.scale_corr || 1;
+    return [k * (x * Math.cos(th) - y * Math.sin(th)) + (c.offset_e || 0), k * (x * Math.sin(th) + y * Math.cos(th)) + (c.offset_n || 0)];
+  }
+  function enToScene(e, n) {
+    const c = S.calib, th = ((S.geo?.yaw_deg || 0) + (c.yaw_trim_deg || 0)) * D2R, k = c.scale_corr || 1;
+    const de = (e - (c.offset_e || 0)) / k, dn = (n - (c.offset_n || 0)) / k;
+    return [de * Math.cos(th) + dn * Math.sin(th), -de * Math.sin(th) + dn * Math.cos(th)];
+  }
+  const llToEN = (lat, lon) => [(lon - S.geo.lon0) * 111320 * Math.cos(S.geo.lat0 * D2R), (lat - S.geo.lat0) * 110540];
+  const enToLL = (e, n) => ({ lat: S.geo.lat0 + n / 110540, lon: S.geo.lon0 + e / (111320 * Math.cos(S.geo.lat0 * D2R)) });
+  const llToScene = (lat, lon) => enToScene(...llToEN(lat, lon));
+  const sceneToLL = (x, y) => enToLL(...sceneToEN(x, y));
+
+  // ================= GPS: locate me + "I'm here" pins =================
+  function startGps() {
+    if (S.watch != null) return;
+    if (!navigator.geolocation) return say("This browser can't share its location.", 'bad');
+    if (!hasGeo()) return say("This scene has no GPS alignment, so your position can't be shown on it.", 'bad');
+    S.watch = navigator.geolocation.watchPosition(p => {
+      S.me = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() };
+      $('locBtn').classList.add('on'); drawMap();
+    }, e => { say(`Location unavailable: ${e.message}. Allow location for this site (iPhone: Settings → Privacy → Location Services → Safari Websites).`, 'bad'); S.watch = null; }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+  }
+  $('locBtn').onclick = () => {
+    startGps();
+    if (S.me) { const [x, y] = llToScene(S.me.lat, S.me.lon); if (S.view) { S.view.cx = x; S.view.cy = y; } drawMap(); say(`You: ±${Math.round(S.me.acc)} m GPS accuracy.`); }
+    else say('Finding you. Allow location when asked');
+  };
+  $('aHere').onclick = () => {
+    startGps();
+    if (!S.me) return say('Waiting for a GPS fix… tap again in a moment.');
+    if (S.me.acc > 20) return say(`GPS is only ±${Math.round(S.me.acc)} m right now; wait for a better fix (open sky helps).`, 'bad');
+    const [x, y] = llToScene(S.me.lat, S.me.lon), a = { x: +x.toFixed(2), y: +y.toFixed(2), alt: S.pts[0]?.alt ?? alt() };
+    if (S.pts.length) S.pts[0] = a; else S.pts.push(a);
+    S.sel = { kind: 'pt', i: 0 }; invalidate(); say(`A set to your position (±${Math.round(S.me.acc)} m). Take off from exactly here.`, 'ok');
+  };
+
+  // A pin pairs your GPS fix with the spot you tap. 1 pin fixes the offset; pins >= 30 m apart also fix scale + heading.
+  async function addPin(x, y) {
+    startGps();
+    if (!S.me || Date.now() - S.me.t > 15000) return say('Waiting for a GPS fix… try again in a moment.');
+    if (S.me.acc > 15) return say(`GPS is ±${Math.round(S.me.acc)} m; wait for ±15 m or better before pinning.`, 'bad');
+    const c = S.calib; c.pins = [...(c.pins || []), { x, y, lat: S.me.lat, lon: S.me.lon, acc: S.me.acc, at: new Date().toISOString() }];
+    fitPins(); await saveCal(); invalidate();
+    say(`Pinned. ${calSummary()}`, 'ok');
+  }
+  function fitPins() {
+    const c = S.calib, pins = c.pins || [];
+    if (!pins.length || !hasGeo()) { c.offset_e = 0; c.offset_n = 0; return; }
+    const P = pins.map(p => ({ s: [p.x, p.y], r: llToEN(p.lat, p.lon) }));
+    let spread = 0; for (const a of P) for (const b of P) spread = Math.max(spread, Math.hypot(a.s[0] - b.s[0], a.s[1] - b.s[1]));
+    if (P.length >= 2 && spread >= 30) {
+      // 2D similarity (Procrustes): r = a*s + t with a = k*e^{i theta}
+      const ms = [0, 1].map(i => P.reduce((t, p) => t + p.s[i], 0) / P.length), mr = [0, 1].map(i => P.reduce((t, p) => t + p.r[i], 0) / P.length);
+      let sxx = 0, sxy = 0, ss = 0;
+      for (const p of P) { const sx = p.s[0] - ms[0], sy = p.s[1] - ms[1], rx = p.r[0] - mr[0], ry = p.r[1] - mr[1]; sxx += sx * rx + sy * ry; sxy += sx * ry - sy * rx; ss += sx * sx + sy * sy; }
+      const k = Math.hypot(sxx, sxy) / ss, th = Math.atan2(sxy, sxx);
+      if (k > 0.6 && k < 1.6) { c.scale_corr = +k.toFixed(4); c.yaw_trim_deg = +((th / D2R) - (S.geo.yaw_deg || 0)).toFixed(2); c.measured = true; c.heading_checked = true; c.pin_fit = 'similarity'; }
+    } else c.pin_fit = 'offset';
+    c.offset_e = 0; c.offset_n = 0;
+    const res = P.map(p => { const [e, n] = sceneToEN(...p.s); return [p.r[0] - e, p.r[1] - n]; });
+    c.offset_e = +(res.reduce((t, r) => t + r[0], 0) / res.length).toFixed(2); c.offset_n = +(res.reduce((t, r) => t + r[1], 0) / res.length).toFixed(2);
+    c.pin_rms_m = +Math.sqrt(P.reduce((t, p) => { const [e, n] = sceneToEN(...p.s); return t + (p.r[0] - e) ** 2 + (p.r[1] - n) ** 2; }, 0) / P.length).toFixed(1);
+  }
+  async function saveCal() { try { await j(`/api/calib/${encodeURIComponent(S.scene)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(S.calib) }); } catch (e) { say(`Couldn't save calibration: ${e.message}`, 'bad'); } renderCal(); }
+  function calSummary() {
+    const c = S.calib || {}, n = (c.pins || []).length;
+    if (!n) return "No pins yet: the map uses the drone-clip GPS fit (±11 m). Use I'm here in Plan.";
+    return `${n} pin(s), ${c.pin_fit === 'similarity' ? 'offset + scale + heading' : 'offset only (pins 30 m+ apart also fix scale and heading)'}\nshift ${Math.hypot(c.offset_e, c.offset_n).toFixed(1)} m · residual ${c.pin_rms_m ?? '–'} m · scale ×${(+c.scale_corr).toFixed(3)} · heading trim ${(+c.yaw_trim_deg).toFixed(1)}°`;
+  }
+  function renderCal() { $('calInfo').textContent = calSummary(); }
+  $('calReset').onclick = async () => { S.calib.pins = []; S.calib.offset_e = 0; S.calib.offset_n = 0; delete S.calib.pin_fit; delete S.calib.pin_rms_m; await saveCal(); invalidate(); };
+
+  // Real-flight margin, as in the web planner: grows with distance from A, sized by the calibration quality.
+  function marginParams(force) {
+    if (!force && !$('useMargin').checked) return { base: 0, rate: 0 };
+    const c = S.calib || {}, pinned = c.pin_fit === 'similarity';
+    let sc = c.measured ? 0.02 : 0.06, hd = (c.heading_checked || pinned) ? 2 : 5, base = 1.0;
+    if (c.pins?.length) base = Math.max(1, Math.min(4, c.pin_rms_m || 2));
+    const g = S.geo;
+    if (g?.scale_sigma != null && g?.heading_sigma_deg != null && 2 * g.scale_sigma + Math.sin(2 * g.heading_sigma_deg * D2R) < sc + Math.sin(hd * D2R)) { sc = 2 * g.scale_sigma; hd = 2 * g.heading_sigma_deg; }
+    return { base, rate: +(sc + Math.sin(hd * D2R)).toFixed(4) };
+  }
+  $('useMargin').onchange = () => invalidate();
+
+  // ================= sample route =================
+  async function loadSample(quiet) {
+    try {
+      const m = await j('/api/missions/latest'), r = m.sim_request;
+      if (!r || r.scene !== S.scene) throw new Error('none');
+      const pts = [r.a, ...(r.via || [])]; if (!(r.b.x === r.a.x && r.b.y === r.a.y)) pts.push(r.b);
+      S.pts = pts.map(p => ({ x: p.x, y: p.y, alt: p.alt ?? r.alt_m }));
+      S.pois = (r.pois || []).map(p => ({ x: p.x, y: p.y, ...(p.z != null ? { z: p.z } : {}), label: p.label, radius_m: p.radius_m ?? 25 }));
+      $('loop').checked = r.b.x === r.a.x && r.b.y === r.a.y; $('style').value = S.pois.length ? 'normal' : (r.flight_style || 'normal');
+      if (!quiet) say('Loaded your latest route.', 'ok');
+    } catch {
+      const M = S.meta, cx = (M.x0 + M.x1) / 2, cy = (M.y0 + M.y1) / 2;
+      S.pts = [{ x: cx, y: cy, alt: 10 }, { x: cx + 20, y: cy + 15, alt: 10 }, { x: cx - 15, y: cy + 25, alt: 10 }];
+      say('Placed a sample triangle. Edit it in Plan.');
+    }
+    S.view = null; S.sel = null; invalidate();
+  }
+  $('sample').onclick = () => loadSample(false);
+
+  // ================= map editor =================
+  function sizeMap() {
+    const c = $('map'), r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    if (r.width && (c.width !== Math.round(r.width * dpr) || c.height !== Math.round(r.height * dpr))) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
+    return { w: r.width, h: r.height, dpr };
+  }
+  function fitView() {
+    if (!S.meta) return; const { w, h } = sizeMap(); if (!w) return;
+    const M = S.meta, pts = S.pts.length > 1 ? [...S.pts, ...S.pois] : null;
+    const x0 = pts ? Math.min(...pts.map(p => p.x)) - 15 : M.x0, x1 = pts ? Math.max(...pts.map(p => p.x)) + 15 : M.x1;
+    const y0 = pts ? Math.min(...pts.map(p => p.y)) - 15 : M.y0, y1 = pts ? Math.max(...pts.map(p => p.y)) + 15 : M.y1;
+    // Fit into the part of the map the side panel doesn't cover (right side in landscape, bottom in portrait).
+    const mr = $('map').getBoundingClientRect(), sr = $('side').getBoundingClientRect(), shown = !S.sideHidden && sr.width > 0, portrait = sr.width > mr.width * 0.7;
+    const cutR = !shown || portrait ? 0 : Math.max(0, mr.right - sr.left + 12), cutB = shown && portrait ? Math.max(0, mr.bottom - sr.top + 12) : 0, cutT = 56;
+    const uw = Math.max(80, w - cutR), uh = Math.max(80, h - cutB - cutT);
+    const mpp = Math.max((x1 - x0) / uw, (y1 - y0) / uh);
+    S.view = { cx: (x0 + x1) / 2 + (cutR / 2) * mpp, cy: (y0 + y1) / 2 - ((cutB - cutT) / 2) * mpp, mpp };
+  }
+  function mapXf() {
+    const { w, h, dpr } = sizeMap(); if (!S.view) fitView(); if (!S.view) S.view = { cx: 0, cy: 0, mpp: 0.3 };
+    const V = S.view;
+    return { to: (x, y) => [(w / 2 + (x - V.cx) / V.mpp) * dpr, (h / 2 - (y - V.cy) / V.mpp) * dpr], from: (u, v) => ({ x: V.cx + (u - w / 2) * V.mpp, y: V.cy - (v - h / 2) * V.mpp }), css: (x, y) => [w / 2 + (x - V.cx) / V.mpp, h / 2 - (y - V.cy) / V.mpp], dpr, V };
+  }
+  function drawLayer(g, T, big) {
+    const r = big ? (T.dpr || 1) : 0.6, seq = $('loop').checked ? [...S.pts, S.pts[0]] : S.pts;
+    const path = big ? (S.fly && !S.dirty ? S.fly.path : null) : (S.active?.path || (S.fly && !S.dirty ? S.fly.path : null));
+    if (path) { g.strokeStyle = 'rgba(0,0,0,.35)'; g.lineWidth = 7 * r; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); path.forEach((p, i) => { const [x, y] = T.to(p[0], p[1]); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.strokeStyle = '#8cc8ff'; g.lineWidth = 4 * r; g.lineJoin = 'round'; g.beginPath(); path.forEach((p, i) => { const [x, y] = T.to(p[0], p[1]); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); }
+    else if (S.pts.length > 1) { g.setLineDash([2 * r, 7 * r]); g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,.8)'; g.lineWidth = 3 * r; g.beginPath(); seq.forEach((p, i) => { const [x, y] = T.to(p.x, p.y); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.setLineDash([]); }
+    S.pois.forEach((p, i) => {
+      if (!p.radius_m) return; const [x, y] = T.to(p.x, p.y), [ex] = T.to(p.x + p.radius_m, p.y), rr = Math.abs(ex - x), sel = big && S.sel?.kind === 'poi' && S.sel.i === i;
+      g.fillStyle = `rgba(241,201,122,${sel ? .10 : .05})`; g.beginPath(); g.arc(x, y, rr, 0, 7); g.fill();
+      g.setLineDash([3 * r, 5 * r]); g.strokeStyle = `rgba(241,201,122,${sel ? .7 : .35})`; g.lineWidth = 1.5 * r; g.stroke(); g.setLineDash([]);
+    });
+    S.pois.forEach((p, i) => { const [x, y] = T.to(p.x, p.y), sel = big && S.sel?.kind === 'poi' && S.sel.i === i; g.strokeStyle = '#f1c97a'; g.lineWidth = 2 * r; g.beginPath(); g.arc(x, y, (sel ? 13 : 10) * r, 0, 7); g.stroke(); g.beginPath(); g.arc(x, y, 3 * r, 0, 7); g.fillStyle = '#f1c97a'; g.fill(); });
+    if (big) (S.calib?.pins || []).forEach(p => { const [x, y] = T.to(p.x, p.y); g.save(); g.translate(x, y); g.rotate(Math.PI / 4); g.fillStyle = 'rgba(200,190,255,.9)'; g.strokeStyle = '#fff'; g.lineWidth = 2 * r; g.fillRect(-6 * r, -6 * r, 12 * r, 12 * r); g.strokeRect(-6 * r, -6 * r, 12 * r, 12 * r); g.restore(); });
+    S.pts.forEach((p, i) => {
+      const [x, y] = T.to(p.x, p.y), sel = big && S.sel?.kind === 'pt' && S.sel.i === i;
+      if (sel) { g.fillStyle = 'rgba(140,200,255,.28)'; g.beginPath(); g.arc(x, y, 21 * r, 0, 7); g.fill(); }
+      g.shadowColor = 'rgba(0,0,0,.45)'; g.shadowBlur = 6 * r; g.shadowOffsetY = 1.5 * r;
+      g.fillStyle = i === 0 ? '#1c1c1e' : 'rgba(255,255,255,.95)'; g.beginPath(); g.arc(x, y, 12 * r, 0, 7); g.fill();
+      g.shadowColor = 'transparent'; g.lineWidth = (i === 0 ? 2 : 1) * r; g.strokeStyle = i === 0 ? '#fff' : 'rgba(0,0,0,.15)'; g.stroke();
+      g.fillStyle = i === 0 ? '#fff' : '#111'; g.font = `600 ${12.5 * r}px -apple-system, system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i === 0 ? 'A' : String(i), x, y + .5 * r);
+      if (big) { g.font = `500 ${11.5 * r}px -apple-system, system-ui`; g.lineWidth = 3 * r; g.strokeStyle = 'rgba(0,0,0,.65)'; g.strokeText(`${p.alt} m`, x, y + 23 * r); g.fillStyle = 'rgba(255,255,255,.92)'; g.fillText(`${p.alt} m`, x, y + 23 * r); }
+    });
+    // Race gates: a bar across the gate, as wide as it is, with a tick for the direction through it.
+    (S.race?.gates || []).forEach((gt, i) => {
+      const h = gt.yaw_deg * D2R, rad = gt.diameter_m / 2, [a1, b1] = T.to(gt.x + Math.sin(h) * rad, gt.y - Math.cos(h) * rad), [a2, b2] = T.to(gt.x - Math.sin(h) * rad, gt.y + Math.cos(h) * rad), [cx, cy] = T.to(gt.x, gt.y), [tx, ty] = T.to(gt.x + Math.cos(h) * 1.5, gt.y + Math.sin(h) * 1.5);
+      const next = S.run && i === S.run.next;
+      g.strokeStyle = next ? '#8cc8ff' : 'rgba(255,255,255,.9)'; g.lineCap = 'round'; g.lineWidth = 3.5 * r; g.beginPath(); g.moveTo(a1, b1); g.lineTo(a2, b2); g.stroke();
+      g.lineWidth = 2 * r; g.beginPath(); g.moveTo(cx, cy); g.lineTo(tx, ty); g.stroke();
+      if (big) { g.fillStyle = '#fff'; g.font = `600 ${11 * r}px -apple-system, system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(i + 1), cx - (tx - cx) * 1.6, cy - (ty - cy) * 1.6); }
+    });
+    // You (phone GPS), with its accuracy circle.
+    if (S.me && hasGeo()) {
+      const [sx, sy] = llToScene(S.me.lat, S.me.lon), [x, y] = T.to(sx, sy), [ex] = T.to(sx + S.me.acc / (S.calib.scale_corr || 1), sy);
+      g.fillStyle = 'rgba(10,132,255,.16)'; g.beginPath(); g.arc(x, y, Math.abs(ex - x), 0, 7); g.fill();
+      g.fillStyle = '#0a84ff'; g.strokeStyle = '#fff'; g.lineWidth = 2.5 * r; g.beginPath(); g.arc(x, y, 7 * r, 0, 7); g.fill(); g.stroke();
+    }
+    const poiI = S.st?.replay?.poi ?? -1, tgt = poiI >= 0 ? S.active?.pois?.[poiI] : null;
+    if (S.st?.pos && tgt && S.mode !== 'idle') { const [x, y] = T.to(S.st.pos[0], S.st.pos[1]), [px, py] = T.to(tgt.x, tgt.y); g.setLineDash([3 * r, 5 * r]); g.strokeStyle = 'rgba(241,201,122,.85)'; g.lineWidth = 2 * r; g.beginPath(); g.moveTo(x, y); g.lineTo(px, py); g.stroke(); g.setLineDash([]); }
+    if (S.st?.pos && S.mode !== 'idle') {
+      const [x, y] = T.to(S.st.pos[0], S.st.pos[1]), h = -S.st.yaw_deg * D2R;
+      g.save(); g.translate(x, y); g.rotate(h); g.fillStyle = S.mode === 'manual' ? '#ff8f80' : '#fff'; g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 5 * r; g.beginPath(); g.moveTo(14 * r, 0); g.lineTo(-9 * r, 8 * r); g.lineTo(-9 * r, -8 * r); g.closePath(); g.fill(); g.restore();
+    }
+  }
+  function drawMap() {
+    drawMini();
+    if (!S.meta || S.screen !== 'plan' || !sizeMap().w) return;
+    const c = $('map'), g = c.getContext('2d'), T = mapXf(), M = S.meta;
+    g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+    const [ix, iy] = T.to(M.x0, M.y1), [jx, jy] = T.to(M.x1, M.y0);
+    if (S.top.complete && S.top.naturalWidth) g.drawImage(S.top, ix, iy, jx - ix, jy - iy);
+    if (S.layers?.h && S.hmap?.scene === S.scene) { g.imageSmoothingEnabled = true; g.drawImage(S.hmap.img, ix, iy, jx - ix, jy - iy); }
+    else if (S.occ.complete && S.occ.naturalWidth) { g.globalAlpha = .28; g.drawImage(S.occ, ix, iy, jx - ix, jy - iy); g.globalAlpha = 1; }
+    drawLayer(g, T, true); renderSel();
+  }
+  function drawMini() {
+    if (!S.meta || S.screen !== 'fly') return;
+    const c = $('mini'), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
+    const extra = [...(S.st?.pos ? [[S.st.pos[0], S.st.pos[1]]] : []), ...(S.me && hasGeo() ? [llToScene(S.me.lat, S.me.lon)] : [])];
+    const gx = (S.run || (S.placing && S.kind === 'race')) ? (S.race?.gates || []) : [], base = gx.length ? gx : S.pts;
+    const xs = [...base.map(p => p.x), ...extra.map(p => p[0])], ys = [...base.map(p => p.y), ...extra.map(p => p[1])];
+    if (!xs.length) return;
+    const pad = 12, x0 = Math.min(...xs) - pad, x1 = Math.max(...xs) + pad, y0 = Math.min(...ys) - pad, y1 = Math.max(...ys) + pad;
+    const span = Math.max(x1 - x0, y1 - y0), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, sc = c.width / span, M = S.meta;
+    const T = { to: (x, y) => [c.width / 2 + (x - cx) * sc, c.height / 2 - (y - cy) * sc] };
+    if (S.top.complete && S.top.naturalWidth) { const [ix, iy] = T.to(M.x0, M.y1), [jx, jy] = T.to(M.x1, M.y0); g.drawImage(S.top, ix, iy, jx - ix, jy - iy); }
+    drawLayer(g, T, false);
+  }
+  // ---- route speed (Plan panel stepper mirrors Settings → Speed; saved with each route) ----
+  const SPEEDS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
+  function syncSpeed() { const v = +$('speed').value; $('spdVal').textContent = `${v} m/s`; }
+  $('spdStep').querySelectorAll('button').forEach(b => b.onclick = () => {
+    const i = Math.max(0, Math.min(SPEEDS.length - 1, SPEEDS.indexOf(+$('speed').value) + +b.dataset.s));
+    $('speed').value = String(SPEEDS[i]); syncSpeed(); invalidate();
+    if (SPEEDS[i] > 8) say('Real flights are capped at 8 m/s by the phone; the sandbox flies it at full speed.');
+  });
+  $('speed').addEventListener('change', syncSpeed);
+
+  // ---- safe-height layer: lowest altitude with 1.5 m clearance, from the collision field at several heights ----
+  const H_ALTS = [2, 3, 4, 5, 6, 8, 10, 12, 15, 18, 22, 26, 30, 35, 40];
+  S.layers = { h: store.get('layerH') === '1', faa: store.get('layerFaa') === '1' };
+  async function loadHeights() {
+    const scene = S.scene; if (!scene || S.hmap?.scene === scene || S.hmapBusy === scene) return;
+    S.hmapBusy = scene;
+    try {
+      const px = 256, imgs = await Promise.all(H_ALTS.map(a => new Promise((ok, no) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => ok(im); im.onerror = no; im.src = `/sim/api/sim/occupancy?scene=${encodeURIComponent(scene)}&alt=${a}&clear=1.5&px=${px}`; })));
+      const w = imgs[0].naturalWidth, h = imgs[0].naturalHeight, cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      const g = cv.getContext('2d', { willReadFrequently: true }), need = new Float32Array(w * h).fill(Infinity), open = new Uint8Array(w * h).fill(1);
+      // Top down: the lowest height that is free all the way up (a pocket under a tree canopy doesn't count).
+      for (let k = H_ALTS.length - 1; k >= 0; k--) {
+        g.clearRect(0, 0, w, h); g.drawImage(imgs[k], 0, 0); const d = g.getImageData(0, 0, w, h).data;
+        for (let i = 0; i < w * h; i++) if (open[i]) { if (d[i * 4] < 128) need[i] = H_ALTS[k]; else open[i] = 0; }
+      }
+      const out = g.createImageData(w, h), stops = [[2, [110, 200, 190, 0]], [4, [110, 200, 190, 70]], [10, [110, 200, 190, 130]], [20, [232, 196, 110, 150]], [30, [232, 130, 90, 165]], [40, [220, 80, 80, 175]]];
+      const col = v => { if (!isFinite(v)) return [220, 80, 80, 190]; for (let i = 1; i < stops.length; i++) if (v <= stops[i][0]) { const [a0, c0] = stops[i - 1], [a1, c1] = stops[i], t = (v - a0) / (a1 - a0); return c0.map((c, j) => c + (c1[j] - c) * t); } return stops.at(-1)[1]; };
+      for (let i = 0; i < w * h; i++) { const c = col(need[i]); out.data.set(c.map(Math.round), i * 4); }
+      g.putImageData(out, 0, 0);
+      S.hmap = { scene, w, h, need, img: cv };
+    } catch (e) { say(`Couldn't load safe heights: ${e.message || e}`, 'bad'); }
+    S.hmapBusy = null; drawMap(); renderSel();
+  }
+  /** Lowest safe altitude (m) at a scene point, or null if unknown. */
+  function needAt(x, y) {
+    const H = S.hmap, M = S.meta; if (!H || H.scene !== S.scene || !M) return null;
+    const i = Math.floor((x - M.x0) / (M.x1 - M.x0) * H.w), j = Math.floor((M.y1 - y) / (M.y1 - M.y0) * H.h);
+    if (i < 0 || j < 0 || i >= H.w || j >= H.h) return null;
+    return H.need[j * H.w + i];
+  }
+  function setLayer(k, on) {
+    S.layers[k] = on; store.set(k === 'h' ? 'layerH' : 'layerFaa', on ? '1' : '0');
+    $(k === 'h' ? 'hBtn' : 'faaBtn').classList.toggle('on', on);
+    if (k === 'h') { $('hLegend').hidden = !on; if (on) loadHeights(); }
+    else { $('faaCard').hidden = !on; if (on) loadAirspace(); }
+    drawMap();
+  }
+  $('hBtn').onclick = () => setLayer('h', !S.layers.h);
+  $('faaBtn').onclick = () => setLayer('faa', !S.layers.faa);
+
+  // ---- FAA airspace for the scene (recreational rules); also caps point heights ----
+  async function loadAirspace() {
+    if (!S.scene) return;
+    const key = S.scene + (hasGeo() ? '' : S.me ? `@${S.me.lat.toFixed(3)},${S.me.lon.toFixed(3)}` : '');
+    if (S.air?.key === key) return renderAir();
+    const url = hasGeo() ? `/api/airspace?scene=${encodeURIComponent(S.scene)}` : S.me ? `/api/airspace?lat=${S.me.lat}&lon=${S.me.lon}` : null;
+    if (!url) { S.air = { key, error: 'This scene has no GPS alignment. Use Locate me to check your spot.' }; return renderAir(); }
+    $('faaCard').innerHTML = '<b>FAA airspace</b>Checking';
+    try { S.air = { key, ...(await j(url)) }; } catch (e) { S.air = { key, error: e.message }; }
+    renderAir();
+  }
+  function renderAir() {
+    const a = S.air, c = $('faaCard'); if (!a) return;
+    if (a.error) { c.style.setProperty('--lvl', 'var(--t3)'); c.innerHTML = `<b>FAA airspace</b>${esc(a.error)}`; return; }
+    c.style.setProperty('--lvl', a.level === 'ok' ? 'var(--ok)' : a.level === 'warn' ? 'var(--warn)' : 'var(--bad)');
+    c.innerHTML = `<b>${a.class === 'G' ? 'Class G' : `Class ${esc(a.class)}`} · ${a.ceiling_ft} ft max</b>${esc(a.verdict)}${a.airports?.length ? `<br>Airport: ${esc(a.airports.join(', '))}` : ''}<details><summary>Recreational rules</summary><ul>${a.rules.map(r => `<li>${esc(r)}</li>`).join('')}</ul></details><div class="src">${esc(a.source)} · checked ${new Date(a.checked * 1000).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</div>`;
+  }
+  /** Highest point height the rules allow here (metres). */
+  const legalMax = () => Math.min(40, S.air?.ceiling_m ?? 40);
+
+  $('loop').onchange = () => invalidate();
+  $('fitBtn').onclick = () => { fitView(); drawMap(); };
+  addEventListener('resize', () => setTimeout(() => { fitView(); drawMap(); }, 60));
+
+  const RANGES = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100, null];   // null = always look at it
+  function renderSel() {
+    const b = $('selBar'), sel = S.sel;
+    if (!sel || (sel.kind === 'pt' && !S.pts[sel.i]) || (sel.kind === 'poi' && !S.pois[sel.i])) { b.hidden = true; b.dataset.key = ''; return; }
+    b.hidden = false;
+    const key = JSON.stringify(sel) + (sel.kind === 'pt' ? S.pts[sel.i].alt + '/' + needAt(S.pts[sel.i].x, S.pts[sel.i].y) : S.pois[sel.i].radius_m); if (b.dataset.key === key) return; b.dataset.key = key;
+    b.innerHTML = sel.kind === 'pt'
+      ? `<b>${sel.i === 0 ? 'Takeoff A' : 'Point ' + sel.i}</b>${(() => { const n = needAt(S.pts[sel.i].x, S.pts[sel.i].y); return n == null ? '' : `<span style="font-size:12px;color:${S.pts[sel.i].alt < n ? 'var(--bad)' : 'var(--t3)'}">${isFinite(n) ? `safe ≥ ${n} m` : 'blocked'}</span>`; })()}<div class="stepper"><button data-d="-1"><svg class="i"><use href="#i-minus"/></svg></button><span>${S.pts[sel.i].alt} m</span><button data-d="1"><svg class="i"><use href="#i-plus"/></svg></button></div><button class="icon" data-save="1" aria-label="Save as a place"><svg class="i"><use href="#i-bookmark"/></svg></button><button class="icon del" data-del="1" aria-label="Delete"><svg class="i"><use href="#i-trash"/></svg></button>`
+      : `<b>Look-at ${sel.i + 1}</b><span style="font-size:13px;color:var(--t3)">within</span><div class="stepper"><button data-r="-1"><svg class="i"><use href="#i-minus"/></svg></button><span>${S.pois[sel.i].radius_m ? S.pois[sel.i].radius_m + ' m' : 'Always'}</span><button data-r="1"><svg class="i"><use href="#i-plus"/></svg></button></div><button class="icon" data-save="1" aria-label="Save as a place"><svg class="i"><use href="#i-bookmark"/></svg></button><button class="icon del" data-del="1" aria-label="Delete"><svg class="i"><use href="#i-trash"/></svg></button>`;
+    b.querySelectorAll('button').forEach(x => x.onclick = ev => {
+      ev.stopPropagation();
+      if (x.dataset.save) return savePlace(sel);
+      if (x.dataset.del) { (sel.kind === 'pt' ? S.pts : S.pois).splice(sel.i, 1); S.sel = null; }
+      else if (x.dataset.r) { const q = S.pois[sel.i], k = RANGES.indexOf(q.radius_m ?? null), n = Math.max(0, Math.min(RANGES.length - 1, (k < 0 ? 4 : k) + +x.dataset.r)); q.radius_m = RANGES[n]; }
+      else { const want = S.pts[sel.i].alt + +x.dataset.d; if (want > legalMax()) say(`${legalMax()} m is the most the FAA rules allow here (${S.air?.ceiling_ft ?? 400} ft${S.air?.controlled ? ', with LAANC' : ''}; this app caps at 40 m).`); S.pts[sel.i].alt = Math.max(3, Math.min(legalMax(), want)); }
+      invalidate();
+    });
+  }
+
+  const P = new Map(); let G = null;
+  const local = e => { const r = $('map').getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  function hitTest(u, v) {
+    const T = mapXf();
+    for (let i = S.pts.length - 1; i >= 0; i--) { const [x, y] = T.css(S.pts[i].x, S.pts[i].y); if (Math.hypot(x - u, y - v) < 24) return { kind: 'pt', i }; }
+    for (let i = S.pois.length - 1; i >= 0; i--) { const [x, y] = T.css(S.pois[i].x, S.pois[i].y); if (Math.hypot(x - u, y - v) < 22) return { kind: 'poi', i }; }
+    return null;
+  }
+  function segmentHit(u, v) {
+    const T = mapXf(), seq = $('loop').checked ? [...S.pts, S.pts[0]] : S.pts; let best = null;
+    for (let i = 0; i < seq.length - 1; i++) {
+      const [ax, ay] = T.css(seq[i].x, seq[i].y), [bx, by] = T.css(seq[i + 1].x, seq[i + 1].y), dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((u - ax) * dx + (v - ay) * dy) / L2)), d = Math.hypot(u - ax - dx * t, v - ay - dy * t);
+      if (d < 16 && t > .1 && t < .9 && (!best || d < best.d)) best = { d, at: i + 1 };
+    }
+    return best;
+  }
+  const map = $('map');
+  map.addEventListener('pointerdown', e => {
+    if (!S.meta) return; try { map.setPointerCapture(e.pointerId); } catch {}
+    const [u, v] = local(e); P.set(e.pointerId, [u, v]);
+    if (P.size === 2) { clearTimeout(G?.longT); const [a, b] = [...P.values()]; G = { pinch: true, d0: Math.hypot(a[0] - b[0], a[1] - b[1]), mpp0: S.view.mpp, anchor: mapXf().from((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) }; return; }
+    const hit = S.tool === 'here' ? null : hitTest(u, v);
+    G = { u0: u, v0: v, hit, moved: false, view0: { ...S.view } };
+    if (hit) G.longT = setTimeout(() => { if (!G?.moved) { (hit.kind === 'pt' ? S.pts : S.pois).splice(hit.i, 1); S.sel = null; navigator.vibrate?.(30); G = null; invalidate(); } }, 600);
+  });
+  map.addEventListener('pointermove', e => {
+    if (!P.has(e.pointerId) || !G) return;
+    const [u, v] = local(e); P.set(e.pointerId, [u, v]);
+    if (G.pinch && P.size === 2) {
+      const [a, b] = [...P.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), { w, h } = sizeMap();
+      S.view.mpp = Math.max(0.03, Math.min(1.5, G.mpp0 * G.d0 / Math.max(d, 1)));
+      const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2; S.view.cx = G.anchor.x - (mx - w / 2) * S.view.mpp; S.view.cy = G.anchor.y + (my - h / 2) * S.view.mpp; return drawMap();
+    }
+    if (!G.moved && Math.hypot(u - G.u0, v - G.v0) > 7) { G.moved = true; clearTimeout(G.longT); }
+    if (!G.moved) return;
+    if (G.hit) { const p = mapXf().from(u, v), arr = G.hit.kind === 'pt' ? S.pts : S.pois; arr[G.hit.i].x = +p.x.toFixed(2); arr[G.hit.i].y = +p.y.toFixed(2); S.sel = G.hit; S.dirty = true; drawMap(); }
+    else { S.view.cx = G.view0.cx - (u - G.u0) * S.view.mpp; S.view.cy = G.view0.cy + (v - G.v0) * S.view.mpp; drawMap(); }
+  });
+  const up = e => {
+    P.delete(e.pointerId); if (!G) return; clearTimeout(G.longT);
+    if (G.pinch) { if (P.size === 0) G = null; return; }
+    const g = G; G = null;
+    if (g.moved) { if (g.hit) invalidate(); return; }
+    if (g.hit) { S.sel = (S.sel && S.sel.kind === g.hit.kind && S.sel.i === g.hit.i) ? null : g.hit; drawMap(); renderPts(); return; }
+    const p = mapXf().from(g.u0, g.v0), q = { x: +p.x.toFixed(2), y: +p.y.toFixed(2) };
+    if (S.tool === 'here') return addPin(q.x, q.y);
+    if (S.tool === 'look') { S.pois.push({ ...q, label: `Look ${S.pois.length + 1}`, radius_m: 25 }); S.sel = { kind: 'poi', i: S.pois.length - 1 }; if ($('style').value === 'fpv') { $('style').value = 'normal'; say('Switched to Normal style: FPV ignores look-at points.'); } }
+    else {
+      const sg = S.pts.length > 1 ? segmentHit(g.u0, g.v0) : null;
+      if (sg) { const prev = S.pts[sg.at - 1], next = S.pts[sg.at % S.pts.length]; S.pts.splice(sg.at, 0, { ...q, alt: Math.round((prev.alt + next.alt) / 2) }); S.sel = { kind: 'pt', i: sg.at }; }
+      else { S.pts.push({ ...q, alt: alt() }); S.sel = { kind: 'pt', i: S.pts.length - 1 }; }
+    }
+    invalidate();
+  };
+  map.addEventListener('pointerup', up); map.addEventListener('pointercancel', up);
+  map.addEventListener('wheel', e => { e.preventDefault(); if (!S.view) return; const [u, v] = local(e), a = mapXf().from(u, v), { w, h } = sizeMap(); S.view.mpp = Math.max(0.03, Math.min(1.5, S.view.mpp * Math.exp(e.deltaY * 0.0015))); S.view.cx = a.x - (u - w / 2) * S.view.mpp; S.view.cy = a.y + (v - h / 2) * S.view.mpp; drawMap(); }, { passive: false });
+
+  function tool(t) { S.tool = t; for (const [id, v] of [['toolRoute', 'route'], ['toolLook', 'look'], ['toolHere', 'here']]) $(id).classList.toggle('on', v === t); if (t === 'here') { startGps(); say('Stand somewhere you can recognise on the map (a driveway corner, a mailbox), then tap that exact spot. Two or more pins 30 m+ apart also fix scale and heading.'); } }
+  $('toolRoute').onclick = () => tool('route'); $('toolLook').onclick = () => tool('look'); $('toolHere').onclick = () => tool('here');
+  $('undo').onclick = () => { if (S.tool === 'look' && S.pois.length) S.pois.pop(); else S.pts.pop(); S.sel = null; invalidate(); };
+  $('clear').onclick = () => { S.pts = []; S.pois = []; S.sel = null; invalidate(); };
+  $('style').onchange = () => { if ($('style').value === 'fpv' && S.pois.length) say('FPV style ignores look-at points.'); invalidate(); };
+  $('speed').onchange = () => invalidate();
+
+  function renderPts() {
+    $('pts').innerHTML = S.pts.map((p, i) => `<li class="${S.sel?.kind === 'pt' && S.sel.i === i ? 'sel' : ''}"><span class="tag ${i === 0 ? 'a' : ''}">${i === 0 ? 'A' : i}</span><span class="name">${i === 0 ? 'Takeoff' : 'Waypoint'}</span><div class="stepper"><button data-i="${i}" data-d="-1"><svg class="i"><use href="#i-minus"/></svg></button><span>${p.alt} m</span><button data-i="${i}" data-d="1"><svg class="i"><use href="#i-plus"/></svg></button></div><button class="x" data-i="${i}" data-x="1" aria-label="Remove"><svg class="i"><use href="#i-x"/></svg></button></li>`).join('')
+      + (S.pois.length ? `<li class="note">${S.pois.length} look-at point${S.pois.length > 1 ? 's' : ''}. The camera turns toward one while you're inside its range, and faces ahead otherwise. Tap one on the map to change its range</li>` : '')
+      + (S.pts.length ? '' : '<li class="note">No waypoints yet. Tap the map to add takeoff A</li>');
+    $('pts').querySelectorAll('button').forEach(b => b.onclick = () => { const i = +b.dataset.i; if (b.dataset.x) { S.pts.splice(i, 1); S.sel = null; } else S.pts[i].alt = Math.max(3, Math.min(40, S.pts[i].alt + +b.dataset.d)); invalidate(); });
+  }
+
+  // Live route check.
+  let prevT, prevSeq = 0;
+  function invalidate() { S.dirty = true; renderPts(); drawMap(); clearTimeout(prevT); prevT = setTimeout(previewPlan, 450); }
+  function pill(t, cls) { $('pill').querySelector('.t').textContent = t; $('pill').className = 'glass ' + (cls || ''); }
+  async function previewPlan() {
+    if (S.pts.length < 2) return pill('Tap the map to add waypoints (first = takeoff A)', '');
+    const seq = ++prevSeq; pill('Checking route', 'busy');
+    try {
+      const d = await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request(null)) });
+      if (seq !== prevSeq) return;
+      if (!d.ok) { S.fly = null; pill(`Blocked: ${d.reason || 'no safe route'}`, 'bad'); }
+      else { S.fly = d; S.dirty = false; const noRange = S.pois.some(p => p.radius_m) && !(d.pois || []).some(q => q.radius_m != null); pill(`${noRange ? 'Look-at ranges not applied yet · ' : ''}${Math.round(d.length_m)} m · ${Math.round(d.duration_s)} s${d.collisions ? ` · ${d.collisions} collision${d.collisions > 1 ? 's' : ''}` : ' · clear'}${$('useMargin').checked ? ' · with margin' : ''}`, d.collisions ? 'bad' : 'ok'); }
+      drawMap();
+    } catch (e) { if (seq === prevSeq) pill(`Error: ${e.message}`, 'bad'); }
+  }
+
+  // ================= planning + flying =================
+  function request(fromHere, forceMargin) {
+    const pts = fromHere ? fromHere.pts : S.pts, loop = $('loop').checked && !fromHere, a = pts[0], rest = pts.slice(1);
+    const m = marginParams(forceMargin), origin = S.pts[0] || a;
+    return {
+      scene: S.scene, a, b: loop ? a : rest.at(-1), via: loop ? rest : rest.slice(0, -1), alt_m: a.alt, speed_mps: +$('speed').value, clear_m: 1.5,
+      clear_base_h: m.base, clear_growth_per_m: m.rate, clear_origin: { x: origin.x, y: origin.y },
+      takeoff_land: !fromHere, pois: S.pois.map(p => ({ x: p.x, y: p.y, ...(p.z != null ? { z: p.z } : {}), label: p.label, ...(p.radius_m ? { radius_m: p.radius_m } : {}) })), poi_mode: 'nearest', flight_style: $('style').value, fpv_gimbal_deg: -10,
+    };
+  }
+  async function startReplay(d) {
+    S.active = d; S.fly = d; S.dirty = false; S.pausedByLeave = false;
+    await fetch(`/sim/replay?sid=${SID}&id=${d.id}&cam=${S.cam}`); await fetch(`/sim/replay?sid=${SID}&id=${d.id}&t=play&from=0`);
+    S.mode = 'flying'; S.collisions0 = S.st?.collisions ?? 0;
+  }
+  async function plan(fromHere) {
+    if (!fromHere && S.pts.length < 2) return say('Add at least two points (A and one more).', 'bad');
+    say(fromHere ? 'Re-planning from here' : 'Planning');
+    try {
+      const d = (!fromHere && S.fly && !S.dirty) ? S.fly : await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request(fromHere)) });
+      if (!d.ok) return say(`No safe route: ${d.reason || 'unknown'}.${fromHere ? ' Fly somewhere more open and try again.' : ' Move or raise the points in red areas.'}`, 'bad');
+      await startReplay(d);
+      say(`${fromHere ? 'Back on the route' : 'Flying'}: ${Math.round(d.length_m)} m, ${Math.round(d.duration_s)} s.`, 'ok');
+      await show('fly');
+    } catch (e) { say(`Planning failed: ${e.message}`, 'bad'); }
+  }
+  $('go').onclick = () => plan(null);
+
+  async function pause() {
+    if (S.mode === 'watch' && S.watch) {
+      const t = (S.st?.replay?.t ?? 0).toFixed(2), k = encodeURIComponent(S.watch.key);
+      await fetch(`/sim/replay?sid=${SID}&ghost=${k}&t=${S.watch.paused ? `play&from=${t}` : t}`); S.watch.paused = !S.watch.paused; return;
+    }
+    if (!S.active) return;
+    const t = (S.st?.replay?.t ?? 0).toFixed(2);
+    if (S.mode === 'flying') { await fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${t}`); S.mode = 'paused'; }
+    else if (S.mode === 'paused') { await fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=play&from=${t}`); S.mode = 'flying'; }
+  }
+  $('pauseBtn').onclick = () => pause();
+  $('restart').onclick = async () => { if (!S.active) return; await startReplay(S.active); show('fly'); };
+  $('camBtn').onclick = () => { S.cam = S.cam === 'fpv' ? 'chase' : 'fpv'; $('camBtn').textContent = S.cam === 'fpv' ? 'First person' : 'Chase'; if (S.active) fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&cam=${S.cam}`); };
+
+  async function takeover() {
+    if (!['flying', 'paused'].includes(S.mode)) return;
+    S.mode = 'manual'; S.pausedByLeave = false;
+    await fetch(`/sim/mode?sid=${SID}&mode=manual`);   // keeps the replay's pose: you fly from exactly here
+  }
+  function remainingFrom(pos) {
+    const route = $('loop').checked ? [...S.pts, S.pts[0]] : S.pts; let best = 1, bd = Infinity;
+    for (let i = 0; i < route.length - 1; i++) {
+      const a = route[i], b = route[i + 1], dx = b.x - a.x, dy = b.y - a.y, L = Math.hypot(dx, dy) || 1e-6;
+      const s = Math.max(0, Math.min(L, ((pos[0] - a.x) * dx + (pos[1] - a.y) * dy) / L)), d = Math.hypot(pos[0] - (a.x + dx / L * s), pos[1] - (a.y + dy / L * s));
+      if (d < bd) { bd = d; best = i + 1; }
+    }
+    return route.slice(best);
+  }
+  async function continueFromHere(note) {
+    const p = S.st.pos, rest = remainingFrom(p);
+    if (!rest.length) return say("You're past the last waypoint; nothing left to fly.");
+    if (note) say(note);
+    await plan({ pts: [{ x: +p[0].toFixed(2), y: +p[1].toFixed(2), alt: Math.max(3, +p[2].toFixed(1)) }, ...rest] });
+  }
+  async function rearm() {
+    if (S.mode !== 'manual' || !S.st?.pos) return;
+    if (S.sticks.some(v => Math.abs(v) > 0.1)) return say('Let go of the sticks first.', 'bad');
+    await continueFromHere();
+  }
+
+  // ================= send to the real drone =================
+  // Same mission format the web planner's Launch writes; Flight Lab's runner flies route_rel relative to its takeoff spot.
+  // Plans with the real-flight margin and returns the mission (throws with a readable reason).
+  async function buildMission() {
+    if (S.pts.length < 2) throw new Error('Add at least two points first.');
+    if (!hasGeo()) throw new Error("This scene has no GPS alignment, so it can't become a real mission.");
+    {
+      const body = request(null, true);
+      const P = await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!P.ok) throw new Error(`Not safe for a real flight: ${P.reason}. Raise or move the points.`);
+      if (P.collisions) throw new Error(`The plan touches obstacles (${P.collisions}); fix the route first.`);
+      const A = S.pts[0], c = S.calib, k = c.scale_corr || 1, tr = (c.yaw_trim_deg || 0) * D2R;
+      const groundA = Math.max(0, P.traj[0].z - 0.35);
+      const toReal = (x, y, z) => { const dx = (x - A.x) * k, dy = (y - A.y) * k; return { e_m: +(dx * Math.cos(tr) - dy * Math.sin(tr)).toFixed(2), n_m: +(dx * Math.sin(tr) + dy * Math.cos(tr)).toFixed(2), up_m: +(z * k).toFixed(2) }; };
+      const ll = (x, y) => { const q = sceneToLL(x, y); return { lat: +q.lat.toFixed(7), lon: +q.lon.toFixed(7) }; };
+      const m = marginParams(true), reach = Math.max(...P.path.map(p => Math.hypot(p[0] - A.x, p[1] - A.y)));
+      const pinned = (c.pins || []).length > 0;
+      const mission = {
+        version: 1, name: `sandbox_${S.scene}`, created: new Date().toISOString(), source: 'sandbox',
+        frame: 'route_rel is metres east/north/up relative to the takeoff point (place the drone on A). lat/lon are for reference only.',
+        loop: $('loop').checked, takeoff_land: true, home: ll(A.x, A.y),
+        limits: { ceiling_m: +(Math.max(...P.path.map(p => p[2])) * k + 5).toFixed(1), min_alt_m: Math.min(...S.pts.map(p => p.alt)), clear_h_m: 1.5, clear_v_m: 1.5, cruise_speed_mps: +$('speed').value, corridor_m: 1.5 },
+        obstacle_handoff: S.handoff,
+        failsafe: { on_link_loss: 'return_to_home', on_low_battery_pct: 25, on_rc_input: 'latch_hand_to_rc' },
+        waypoints: S.pts.slice(1).map(p => ({ ...ll(p.x, p.y), alt_m: p.alt })),
+        route: P.path.map((p, i) => ({ ...ll(p[0], p[1]), alt_m: +p[2].toFixed(1), kind: i === 0 ? 'home' : 'waypoint' })),
+        route_rel: P.path.map(p => toReal(p[0], p[1], p[2] - groundA)),
+        pois_rel: S.pois.map(p => ({ ...toReal(p.x, p.y, ((P.pois?.find(q => q.label === p.label)?.z) ?? 1) - groundA), label: p.label, ...(p.radius_m ? { radius_m: +(p.radius_m * k).toFixed(1) } : {}) })),
+        alignment: { scale_corr: k, yaw_trim_deg: c.yaw_trim_deg || 0, offset_e: c.offset_e || 0, offset_n: c.offset_n || 0, pins: (c.pins || []).length, pin_rms_m: c.pin_rms_m ?? null, measured: !!c.measured, heading_checked: !!c.heading_checked, margin_base_m: m.base, margin_growth_per_m: m.rate, clear_m: 1.5, max_margin_m: +(m.base + m.rate * reach).toFixed(1) },
+        legs: P.legs || [], pois: S.pois.map(p => ({ ...ll(p.x, p.y), label: p.label })), poi_mode: 'nearest',
+        flight_style: $('style').value, fpv_gimbal_deg: -10,
+        camera_schedule: P.traj.filter((_, i) => i % 5 === 0).map(t => ({ t: t.t, yaw_deg: +(90 - t.yaw / D2R).toFixed(1), gimbal_pitch_deg: t.gimbal_pitch_deg ?? null, poi: t.poi ?? -1 })),
+        sim_request: body,
+        sim_preview: { scene: S.scene, id: P.id, length_m: P.length_m, duration_s: P.duration_s, min_clear_m: P.min_clear_m, collisions: P.collisions },
+        buildings_source: `splat:${S.scene}`, warnings: pinned ? [] : ["Map not pinned to GPS: A may be off by ~10 m. Use I'm here before flying."],
+      };
+      return { mission, m, pinned };
+    }
+  }
+  // Saves the mission on cradle (the record + what Flight Lab's "Load latest" reads); in the app it also loads it on the drone.
+  async function sendMission() {
+    const { mission, m, pinned } = await buildMission();
+    const r = await j('/api/missions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mission) });
+    mission.saved_name = r.name;
+    if (APP) { const err = FL.load(JSON.stringify(mission)); if (err) throw new Error(err); }
+    const where = APP ? 'Loaded on the drone. Put it on A, then Fly → Fly for real.' : 'On the Android phone: Flight Lab → Load latest mission → put the drone on A → Start.';
+    say(`Sent: ${r.name}\n${where}\nReal-flight margin: ${m.base} m at A, growing ${m.rate} m per metre (${mission.alignment.max_margin_m} m at the farthest point).${pinned ? '' : '\nWarning: ' + mission.warnings[0]}`, pinned ? 'ok' : '');
+    return { mission, pinned };
+  }
+  $('sendBtn').onclick = async () => { say('Planning with the real-flight margin'); try { await sendMission(); } catch (e) { say(`Send failed: ${e.message}`, 'bad'); } };
+
+  // ================= library: routes, races and places, per splat (saved on cradle) =================
+  S.lib = { routes: [], places: [], races: [] };
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  async function loadLib() {
+    try { const [r, p, g] = await Promise.all([j('/api/lib/routes'), j('/api/lib/places'), j('/api/lib/races')]); S.lib = { routes: r, places: p, races: g }; } catch {}
+    renderLib();
+  }
+  function renderLib() {
+    const mine = x => x.scene === S.scene;     // everything is tied to the splat it was made in
+    $('library').querySelector('h2').innerHTML = `Library <span style="font-size:14px;font-weight:400;color:var(--t3)">· ${esc(S.scene)}</span>`;
+    const row = (kind, x, meta, btns) => `<li><div class="nm"><b>${esc(x.name)}</b><small>${meta}</small></div>${btns}<button class="x" data-k="${kind}" data-s="${x.slug}" data-a="del" aria-label="Delete"><svg class="i"><use href="#i-x"/></svg></button></li>`;
+    const B = (kind, x, a, label, primary) => `<button class="btn${primary ? ' primary' : ''}" data-k="${kind}" data-s="${x.slug}" data-a="${a}">${label}</button>`;
+    const races = S.lib.races.filter(mine), routes = S.lib.routes.filter(mine), places = S.lib.places.filter(mine);
+    $('libRaces').innerHTML = races.map(x => row('races', x, `${x.gates} gates${x.best_s ? ` · you ${x.best_s.toFixed(2)} s` : ''}<span class="ai" data-h="${x.ai?.job || ''}"></span>`, B('races', x, 'race', 'Race', true) + (x.ai ? B('races', x, 'watch', 'Watch AI') : '') + B('races', x, 'train', x.ai ? 'Retrain AI' : 'Train AI') + B('races', x, 'edit', 'Edit') + B('races', x, 'rename', 'Rename'))).join('') || '<li class="note">No races yet. New race drops you into the splat to place gates</li>';
+    $('libRoutes').innerHTML = routes.map(x => row('routes', x, `${x.points} points`, B('routes', x, 'open', 'Open', true) + B('routes', x, 'rename', 'Rename'))).join('') || '<li class="note">No saved routes for this splat</li>';
+    $('libPlaces').innerHTML = places.map(x => row('places', x, x.kind === 'look' ? 'look-at' : 'waypoint', B('places', x, 'add', 'Add to route') + B('places', x, 'rename', 'Rename'))).join('') || '<li class="note">No saved places for this splat</li>';
+    $('library').querySelectorAll('ul.rows button[data-a]').forEach(b => b.onclick = () => libAction(b.dataset.k, b.dataset.s, b.dataset.a));
+    pollAi();
+  }
+  // AI training status next to each race (polls while the Library is open).
+  let aiT;
+  async function pollAi() {
+    clearTimeout(aiT);
+    let running = false;
+    for (const el of $('libRaces').querySelectorAll('.ai[data-h]')) {
+      const job = el.dataset.h; if (!job) continue;
+      try {
+        const st = await j(`/sim/api/sim/race/jobs/${job}`);
+        const ai = st.best_time_s != null ? `AI ${(+st.best_time_s).toFixed(2)} s` : '';
+        el.textContent = st.status === 'done' ? (ai ? ` · ${ai}` : ' · AI found no lap') : st.status === 'failed' ? ' · AI training failed' : ` · AI training ${(+st.elapsed_min || 0).toFixed(1)} min${ai ? `, ${ai}` : ''}`;
+        if (st.status === 'running' || st.status === 'starting') running = true;
+      } catch { el.textContent = ''; }
+    }
+    if (running && S.screen === 'library') aiT = setTimeout(pollAi, 5000);
+  }
+  const post = (kind, body) => j(`/api/lib/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  async function libAction(kind, slug, action) {
+    try {
+      if (action === 'del') { if (!confirm('Delete this?')) return; await fetch(`/api/lib/${kind}/${slug}`, { method: 'DELETE' }); return loadLib(); }
+      const x = await j(`/api/lib/${kind}/${slug}`);
+      if (action === 'rename') {
+        const name = prompt('New name', x.name); if (!name?.trim() || name.trim() === x.name) return;
+        const r = await post(kind, { ...x, name: name.trim() }); if (r.slug !== slug) await fetch(`/api/lib/${kind}/${slug}`, { method: 'DELETE' });
+        if (S.race?.slug === slug) { S.race.slug = r.slug; S.race.name = r.name; }
+        return loadLib();
+      }
+      if (kind === 'routes') {
+        S.pts = x.pts.map(p => ({ ...p })); S.pois = (x.pois || []).map(p => ({ ...p }));
+        if (x.loop != null) $('loop').checked = x.loop; if (x.style) $('style').value = x.style; if (x.speed) $('speed').value = String(x.speed);
+        S.lastRouteName = x.name; S.sel = null; S.view = null; await show('plan'); invalidate(); say(`Opened ${x.name}.`, 'ok');
+      } else if (kind === 'places') {
+        if (x.kind === 'look') { S.pois.push({ x: x.x, y: x.y, z: x.z, label: x.name, radius_m: x.radius_m ?? 25 }); S.sel = { kind: 'poi', i: S.pois.length - 1 }; }
+        else { S.pts.push({ x: x.x, y: x.y, alt: x.alt }); S.sel = { kind: 'pt', i: S.pts.length - 1 }; }
+        await show('plan'); invalidate(); say(`Added ${x.name}.`, 'ok');
+      } else {
+        S.race = { slug, name: x.name, gates: x.gates.map(g => ({ ...g })), best: x.best || null, ai: x.ai || null }; useRaceKey();
+        if (action === 'train') {
+          const minutes = +(prompt('Train the AI for how many minutes? (1-60)', '5') || 0); if (!minutes) return;
+          try {
+            const r = await j('/sim/api/sim/race/train', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ course: x, minutes: Math.max(1, Math.min(60, minutes)) }) });
+            await post('races', { ...x, ai: { job: r.job, course_hash: r.course_hash } });
+            return loadLib();
+          } catch (e) { return alert(e.message.includes('running') ? 'The AI is already training another course; try again when it finishes.' : `Couldn't start training: ${e.message}`); }
+        }
+        if (action === 'edit') await enterPlace('race'); else if (action === 'watch') await watchAi(); else await startRace();
+      }
+    } catch (e) { alert(`Couldn't open it: ${e.message}`); }
+  }
+  $('saveRoute').onclick = async () => {
+    if (S.pts.length < 2) return say('Add at least two points before saving.', 'bad');
+    const name = prompt('Name this route', S.lastRouteName || ''); if (!name?.trim()) return;
+    try { await post('routes', { name: name.trim(), scene: S.scene, pts: S.pts, pois: S.pois, loop: $('loop').checked, style: $('style').value, speed: +$('speed').value }); S.lastRouteName = name.trim(); say(`Saved ${name.trim()}. Find it in Library.`, 'ok'); }
+    catch (e) { say(`Save failed: ${e.message}`, 'bad'); }
+  };
+  async function savePlace(sel) {
+    const q = sel.kind === 'pt' ? S.pts[sel.i] : S.pois[sel.i]; if (!q) return;
+    const name = prompt(sel.kind === 'pt' ? 'Name this place (a spot and height)' : 'Name this view (a look-at target)', ''); if (!name?.trim()) return;
+    const body = sel.kind === 'pt' ? { name: name.trim(), scene: S.scene, kind: 'point', x: q.x, y: q.y, alt: q.alt } : { name: name.trim(), scene: S.scene, kind: 'look', x: q.x, y: q.y, z: q.z ?? null, radius_m: q.radius_m ?? null };
+    try { await post('places', body); say(`Saved ${name.trim()}. Add it to any route from Library.`, 'ok'); }
+    catch (e) { say(`Save failed: ${e.message}`, 'bad'); }
+  }
+
+  // ================= races: gates, time trials, ghosts =================
+  S.kind = 'route'; S.gateD = 2.5; S.race = null; S.run = null; S.gatesKey = null;
+  // The sim draws gates into the video, hidden behind houses and trees. Saved, unchanged races go by slug;
+  // anything else is registered as a course and drawn by its hash.
+  let regT;
+  function gatesChanged() {
+    S.race.edited = true; S.gatesKey = null; clearTimeout(regT);
+    if (!S.race.gates.length) return;
+    regT = setTimeout(async () => { try { const r = await j('/sim/api/sim/course', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ course: { scene: S.scene, laps: 1, gates: S.race.gates } }) }); S.gatesKey = r.course_hash; } catch {} }, 150);
+  }
+  function useRaceKey() { S.gatesKey = S.race?.slug && !S.race.edited ? S.race.slug : null; if (!S.gatesKey && S.race?.gates?.length) gatesChanged(); }
+  $('newRace').onclick = async () => { S.race = { slug: null, name: null, gates: [], best: null }; S.gatesKey = null; await enterPlace('race'); };
+  function setKind(v) {
+    S.kind = v; $('kindSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    for (const id of ['placeAdd', 'placeLook']) $(id).hidden = v !== 'route';
+    for (const id of ['gateAdd', 'gateSize', 'raceSave']) $(id).hidden = v !== 'race';
+    if (v === 'race' && !S.race) S.race = { slug: null, name: null, gates: [], best: null };
+  }
+  $('kindSeg').querySelectorAll('button').forEach(b => b.onclick = () => setKind(b.dataset.v));
+  $('gateSize').querySelectorAll('button').forEach(b => b.onclick = () => { S.gateD = Math.max(1, Math.min(8, S.gateD + +b.dataset.g)); $('gateVal').textContent = `${S.gateD} m`; });
+  $('gateAdd').onclick = () => {
+    const st = S.st; if (!st?.pos) return;
+    S.race.gates.push({ x: +st.pos[0].toFixed(2), y: +st.pos[1].toFixed(2), z: +st.pos[2].toFixed(2), yaw_deg: +st.yaw_deg.toFixed(1), diameter_m: S.gateD });
+    S.race.best = null; S.race.ai = null;   // the course changed: old times and the trained AI don't count
+    gatesChanged();
+    navigator.vibrate?.(20); flashToast(`Gate ${S.race.gates.length} · ${S.gateD} m`);
+  };
+  $('raceSave').onclick = async () => {
+    if (!S.race || S.race.gates.length < 2) return flashToast('Place at least two gates');
+    const name = S.race.name || prompt('Name this race', ''); if (!name?.trim()) return;
+    try { const r = await post('races', { name: name.trim(), scene: S.scene, kind: 'race', gates: S.race.gates, laps: 1, best: S.race.best, ai: S.race.ai || null }); S.race.slug = r.slug; S.race.name = r.name; S.race.edited = false; S.gatesKey = r.slug; flashToast(`Saved ${r.name}`); }
+    catch (e) { flashToast(`Save failed: ${e.message}`); }
+  };
+  // Put the sim drone at a pose: plan a tiny hop toward `toward`, park the replay at t=0, then hand over the sticks.
+  async function teleport(a, toward) {
+    const dirs = toward ? [[toward.x - a.x, toward.y - a.y]] : [[4, 0], [0, 4], [-4, 0], [0, -4]];
+    for (const [dx0, dy0] of [...dirs, [4, 0], [0, 4], [-4, 0], [0, -4]]) {
+      const L = Math.hypot(dx0, dy0) || 1, dx = dx0 / L * 4, dy = dy0 / L * 4;
+      const d = await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene: S.scene, a, b: { x: a.x + dx, y: a.y + dy, alt: a.alt }, via: [], alt_m: a.alt, speed_mps: 2, clear_m: 0.8, takeoff_land: false }) });
+      if (d.ok) {
+        await fetch(`/sim/replay?sid=${SID}&id=${d.id}&cam=fpv`); await fetch(`/sim/replay?sid=${SID}&id=${d.id}&t=0`);
+        // The session only adopts the replay pose when a frame is rendered, so draw one before taking the sticks.
+        await (await fetch(`/sim/frame?sid=${SID}&f=0&r=0&u=0&y=0&view=sim&pitch=-10&noclip=0&cam=fpv`)).arrayBuffer();
+        await fetch(`/sim/mode?sid=${SID}&mode=manual`); return true;
+      }
+    }
+    return false;
+  }
+  function raceStartPose() {
+    const g = S.race.gates[0], h = g.yaw_deg * D2R;
+    return { a: { x: +(g.x - 4 * Math.cos(h)).toFixed(2), y: +(g.y - 4 * Math.sin(h)).toFixed(2), alt: +g.z.toFixed(1) }, toward: { x: g.x, y: g.y } };
+  }
+  async function startRace() {
+    if (!S.race || S.race.gates.length < 2) return alert('This race needs at least two gates.');
+    const { a, toward } = raceStartPose();
+    if (S.placing) setPlacingUi(false);
+    if (!(await teleport(a, toward))) return alert("Couldn't place the drone at the start gate; the start area is blocked.");
+    S.mode = 'manual'; S.active = null; S.cam = 'fpv';
+    S.run = { t0: null, next: 0, splits: [], traj: [], prev: null, done: false };
+    S.aiGhost = null;
+    const aiKey = S.race.ai?.course_hash || (S.race.slug && !S.race.edited ? S.race.slug : null);
+    if (aiKey) j(`/sim/api/sim/race/ghost?course=${encodeURIComponent(aiKey)}`).then(g => {
+      if (!g?.traj?.length) return;
+      const t0 = g.splits?.[0] ?? 0;   // both clocks start at gate 1 (splits[0] = 0); keep this in case of older ghosts
+      S.aiGhost = { time_s: g.time_s - t0, splits: g.splits.slice(1).map(x => +(x - t0).toFixed(2)), traj: g.traj.map(q => [q[0] - t0, ...q.slice(1)]) };
+      flashToast(`Racing the AI · ${S.aiGhost.time_s.toFixed(2)} s`);
+    }).catch(() => {});
+    $('raceBtn').hidden = false; $('raceExit').hidden = false; $('raceBtn').textContent = 'Restart';
+    await show('fly'); flashToast(`${S.race.name || 'Race'} · fly through gate 1 to start the clock`);
+  }
+  $('raceBtn').onclick = () => { if (S.watch) { S.watch = null; S.mode = 'idle'; } startRace(); };
+  $('raceExit').onclick = () => {
+    const watching = !!S.watch; S.run = null; S.watch = null; $('raceBtn').hidden = true; $('raceExit').hidden = true;
+    if (watching) { S.mode = 'idle'; fetch(`/sim/mode?sid=${SID}&mode=manual`); }
+    flashToast(watching ? 'Stopped watching' : 'Race closed');
+  };
+
+  // Watch the AI's best lap from the drone's seat (dji-rl replays the ghost through the normal replay path).
+  async function watchAi() {
+    const key = S.race?.ai?.course_hash || S.race?.slug; if (!key) return alert('Train the AI on this race first.');
+    let g; try { g = await j(`/sim/api/sim/race/ghost?course=${encodeURIComponent(key)}`); } catch (e) { return alert(`No AI lap yet: ${e.message}`); }
+    const r = await fetch(`/sim/replay?sid=${SID}&ghost=${encodeURIComponent(key)}`);
+    if (!r.ok) return alert(`Couldn't start the replay: ${await r.text()}`);
+    if (S.placing) setPlacingUi(false);
+    S.run = null; S.active = null; S.mode = 'watch'; S.cam = 'fpv'; $('camBtn').textContent = 'First person';
+    S.watch = { key, splits: g.splits || [], time_s: +g.time_s, paused: false };
+    $('raceBtn').hidden = false; $('raceExit').hidden = false; $('raceBtn').textContent = 'Race it';
+    await show('fly'); flashToast(`AI lap · ${(+g.time_s).toFixed(2)} s`);
+  }
+  const watchNext = () => { const W = S.watch, rt = S.st?.replay?.race_t; if (!W || rt == null || rt < 0) return 0; return Math.min(W.splits.length, W.splits.filter(x => x <= rt + 1e-3).length); };
+
+  // Gate passing: crossed the gate plane forwards, within its radius.
+  function raceStep(st) {
+    const R = S.run; if (!R || R.done || !st?.pos || !S.race) return;
+    const now = performance.now() / 1000, p = st.pos;
+    if (R.t0 != null) { const t = now - R.t0; if (!R.traj.length || t - R.traj.at(-1)[0] > 0.08) R.traj.push([+t.toFixed(2), +p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(2), +(st.yaw_deg * D2R).toFixed(3)]); }
+    if (R.prev) {
+      const g = S.race.gates[R.next], h = g.yaw_deg * D2R, n = [Math.cos(h), Math.sin(h)];
+      const s0 = (R.prev[0] - g.x) * n[0] + (R.prev[1] - g.y) * n[1], s1 = (p[0] - g.x) * n[0] + (p[1] - g.y) * n[1];
+      if (s0 < 0 && s1 >= 0) {
+        const k = s0 / (s0 - s1), cx = R.prev[0] + (p[0] - R.prev[0]) * k, cy = R.prev[1] + (p[1] - R.prev[1]) * k, cz = R.prev[2] + (p[2] - R.prev[2]) * k;
+        const off = Math.hypot(cx - g.x, cy - g.y, cz - g.z);
+        if (off <= g.diameter_m / 2) {
+          if (R.next === 0) { R.t0 = now; R.traj = [[0, +p[0].toFixed(2), +p[1].toFixed(2), +p[2].toFixed(2), +(st.yaw_deg * D2R).toFixed(3)]]; flashToast('Go'); }
+          else { const t = now - R.t0; R.splits.push(+t.toFixed(2)); const b = S.race.best?.splits?.[R.splits.length - 1]; flashToast(`Gate ${R.next + 1} · ${t.toFixed(2)} s${b != null ? ` (${t - b >= 0 ? '+' : '−'}${Math.abs(t - b).toFixed(2)})` : ''}`); }
+          navigator.vibrate?.(15);
+          R.next++;
+          if (R.next >= S.race.gates.length) finishRace();
+        } else flashToast(`Missed gate ${R.next + 1}`);
+      }
+    }
+    R.prev = p;
+  }
+  async function finishRace() {
+    const R = S.run; R.done = true;
+    const time = R.splits.at(-1), best = S.race.best?.time_s;
+    if (best == null || time < best) {
+      S.race.best = { time_s: time, splits: R.splits, ghost: R.traj, at: new Date().toISOString() };
+      flashToast(best == null ? `Finished · ${time.toFixed(2)} s` : `New best · ${time.toFixed(2)} s (−${(best - time).toFixed(2)})`);
+      if (S.race.name) { try { await post('races', { name: S.race.name, scene: S.scene, kind: 'race', gates: S.race.gates, laps: 1, best: S.race.best, ai: S.race.ai || null }); } catch {} }
+    } else flashToast(`Finished · ${time.toFixed(2)} s · best ${best.toFixed(2)} s`);
+    if (S.aiGhost) setTimeout(() => flashToast(time < S.aiGhost.time_s ? `You beat the AI by ${(S.aiGhost.time_s - time).toFixed(2)} s` : `AI was ${(time - S.aiGhost.time_s).toFixed(2)} s faster`), 1800);
+  }
+  function ghostAt(t, G = S.race?.best?.ghost) {
+    if (!G?.length) return null;
+    if (t <= G[0][0]) return G[0]; if (t >= G.at(-1)[0]) return G.at(-1);
+    let lo = 0, hi = G.length - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (G[m][0] <= t) lo = m; else hi = m; }
+    const a = G[lo], b = G[hi], k = (t - a[0]) / (b[0] - a[0] || 1); return a.map((v, i) => v + (b[i] - v) * k);
+  }
+
+  // ================= first-person overlay: gates and ghost, projected with the sim camera (960x540, 82° hfov) =================
+  function drawOverlay() {
+    const c = $('ov'), r = c.getBoundingClientRect(), dpr = devicePixelRatio || 1;
+    if (c.width !== Math.round(r.width * dpr)) { c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); }
+    const g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
+    const st = S.st, gates = S.race?.gates;
+    if (!st?.pos || !gates?.length || S.screen !== 'fly' || S.cam !== 'fpv' || !(S.run || (S.placing && S.kind === 'race'))) return;
+    const pitch = (S.mode === 'manual' ? (S.placing ? S.tilt : -10) : (st.replay?.gimbal_pitch_deg ?? -10)) * D2R, yaw = st.yaw_deg * D2R;
+    const fw = [Math.cos(pitch) * Math.cos(yaw), Math.cos(pitch) * Math.sin(yaw), Math.sin(pitch)], rt = [Math.sin(yaw), -Math.cos(yaw), 0];
+    const up = [rt[1] * fw[2] - rt[2] * fw[1], rt[2] * fw[0] - rt[0] * fw[2], rt[0] * fw[1] - rt[1] * fw[0]];
+    const f = 480 / Math.tan(41 * D2R), sc = Math.max(c.width / 960, c.height / 540), ox = (c.width - 960 * sc) / 2, oy = (c.height - 540 * sc) / 2;
+    const P = (x, y, z) => { const d = [x - st.pos[0], y - st.pos[1], z - st.pos[2]], zc = d[0] * fw[0] + d[1] * fw[1] + d[2] * fw[2]; if (zc < 0.3) return null; return [ox + (480 + f * (d[0] * rt[0] + d[1] * rt[1] + d[2] * rt[2]) / zc) * sc, oy + (270 - f * (d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) / zc) * sc, zc]; };
+    const next = S.run ? S.run.next : -1;
+    gates.forEach((gt, i) => {
+      const h = gt.yaw_deg * D2R, gr = [Math.sin(h), -Math.cos(h)], rad = gt.diameter_m / 2, pts = [];
+      for (let k = 0; k <= 40; k++) { const a = k / 40 * 2 * Math.PI; pts.push(P(gt.x + gr[0] * Math.cos(a) * rad, gt.y + gr[1] * Math.cos(a) * rad, gt.z + Math.sin(a) * rad)); }
+      if (pts.some(q => !q) || S.gatesKey) return;   // the sim renders the rings (occluded) when it knows the course
+      const done = S.run && i < next, isNext = i === next || (!S.run && i === gates.length - 1);
+      g.lineWidth = (isNext ? 5 : 3) * dpr; g.strokeStyle = done ? 'rgba(255,255,255,.18)' : isNext ? 'rgba(140,200,255,.95)' : 'rgba(255,255,255,.65)';
+      g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 6 * dpr;
+      g.beginPath(); pts.forEach((q, k) => k ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.stroke(); g.shadowBlur = 0;
+      const top = P(gt.x, gt.y, gt.z + rad + 0.4);
+      if (top && !done) { g.font = `600 ${13 * dpr}px -apple-system, system-ui`; g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.92)'; g.fillText(String(i + 1), top[0], top[1]); }
+    });
+    // Ghosts at the same race time: your best lap (lavender) and the trained agent's (cool white).
+    if (S.run) {
+      const t = S.run.t0 != null ? performance.now() / 1000 - S.run.t0 : 0;
+      for (const [G, fill, label] of [[S.race.best?.ghost, 'rgba(200,190,255,.55)', 'You'], [S.aiGhost?.traj, 'rgba(160,230,255,.6)', 'AI']]) {
+        const q = ghostAt(t, G), sp = q && P(q[1], q[2], q[3]); if (!sp) continue;
+        const rr = Math.max(4, Math.min(28, 180 / sp[2])) * dpr;
+        g.fillStyle = fill; g.strokeStyle = 'rgba(255,255,255,.85)'; g.lineWidth = 1.5 * dpr; g.beginPath(); g.arc(sp[0], sp[1], rr, 0, 7); g.fill(); g.stroke();
+        g.font = `600 ${11 * dpr}px -apple-system, system-ui`; g.textAlign = 'center'; g.fillStyle = 'rgba(255,255,255,.9)'; g.fillText(label, sp[0], sp[1] - rr - 4 * dpr);
+      }
+    }
+  }
+
+  // ================= side panel toggle =================
+  $('sideBtn').onclick = () => { S.sideHidden = !S.sideHidden; document.body.classList.toggle('sideHidden', S.sideHidden); $('sideBtn').classList.toggle('on', S.sideHidden); setTimeout(() => { fitView(); drawMap(); }, 20); };
+
+  // ================= place in 3D: fly the splat first-person and drop points where you are =================
+  async function enterPlace(kind = 'route') {
+    let a, toward = null;
+    if (kind === 'race' && S.race?.gates?.length) ({ a, toward } = raceStartPose());
+    else { const M = S.meta, start = S.pts[0] || { x: (M.x0 + M.x1) / 2, y: (M.y0 + M.y1) / 2, alt: alt() }; a = { x: start.x, y: start.y, alt: start.alt ?? alt() }; toward = S.pts[1] || null; }
+    say('Opening the 3D view');
+    try {
+      if (!(await teleport(a, toward))) return alert("Can't open the 3D view there: it's blocked. Move A (or the first gate) somewhere open.");
+      S.mode = 'manual'; S.active = null; S.run = null; S.tilt = -10; $('tiltVal').textContent = '-10°'; S.placeFrom = kind === 'race' ? 'library' : 'plan';
+      setPlacingUi(true); setKind(kind);
+      await show('fly');
+      if (kind === 'race') flashToast(S.race.gates.length ? `Editing ${S.race.name || 'race'} · add gates as you fly` : 'Fly to a spot and add gate 1, facing the way through it');
+    } catch (e) { say(`3D view failed: ${e.message}`, 'bad'); }
+  }
+  function setPlacingUi(on) {
+    S.placing = on; document.body.classList.toggle('placing', on);
+    for (const id of ['placeBtns', 'tilt', 'reticle']) $(id).hidden = !on;
+    $('flyBtns').hidden = on;
+  }
+  async function exitPlace() {
+    if (S.kind === 'race' && S.race?.gates?.length >= 2 && !S.race.slug && confirm('Save this race before leaving?')) await $('raceSave').onclick();
+    const back = S.placeFrom || 'plan'; S.placeFrom = null;
+    setPlacingUi(false);
+    if (back === 'library') { S.mode = 'idle'; return show('library'); }
+    if (back === 'plan') { if (S.mode === 'manual') S.mode = 'idle'; await show('plan'); fitView(); }
+    invalidate();
+  }
+  // From the live view: drop points where the drone is right now, without leaving the flight.
+  $('editBtn').onclick = () => { if (!S.st?.pos) return; S.placeFrom = 'fly'; setKind('route'); if (S.tilt == null) S.tilt = -10; $('tiltVal').textContent = `${S.tilt}°`; setPlacingUi(true); };
+  $('placeBtn').onclick = () => enterPlace('route'); $('place3d').onclick = () => enterPlace('route');
+  $('placeDone').onclick = exitPlace;
+  $('placeAdd').onclick = () => {
+    const p = S.st?.pos; if (!p) return;
+    S.pts.push({ x: +p[0].toFixed(2), y: +p[1].toFixed(2), alt: Math.max(3, Math.round(p[2])) });
+    S.sel = { kind: 'pt', i: S.pts.length - 1 }; S.dirty = true; renderPts(); navigator.vibrate?.(20);
+    flashToast(S.pts.length === 1 ? 'Takeoff A set here' : `Waypoint ${S.pts.length - 1} at ${Math.round(p[2])} m`);
+  };
+  // Look here: a target along the camera's line of sight. From that spot the sim aims yaw and gimbal at it, reproducing this framing.
+  $('placeLook').onclick = () => {
+    const st = S.st; if (!st?.pos) return;
+    const tiltNow = (S.mode === 'manual' ? S.tilt : (st.replay?.gimbal_pitch_deg ?? S.tilt)), [x, y, z] = st.pos, yaw = st.yaw_deg * D2R, tl = tiltNow * D2R;
+    const dir = [Math.cos(tl) * Math.cos(yaw), Math.cos(tl) * Math.sin(yaw), Math.sin(tl)];
+    let t = 30;
+    if (tiltNow < -4) { const groundZ = st.agl != null ? z - st.agl : 0; t = Math.min(60, Math.max(3, (z - groundZ) / -dir[2])); }
+    const q = { x: +(x + dir[0] * t).toFixed(2), y: +(y + dir[1] * t).toFixed(2), z: +(z + dir[2] * t).toFixed(2), label: `Look ${S.pois.length + 1}`, radius_m: Math.max(15, Math.round(t / 5) * 5 + 10) };
+    S.pois.push(q); S.sel = { kind: 'poi', i: S.pois.length - 1 }; S.dirty = true; renderPts();
+    if ($('style').value === 'fpv') $('style').value = 'normal';
+    flashToast(`Look-at ${S.pois.length} set · ${Math.round(t)} m away at ${Math.round(tiltNow)}°`);
+  };
+  $('placeUndo').onclick = () => {
+    if (S.kind === 'race') { if (S.race?.gates.length) { S.race.gates.pop(); S.race.best = null; S.race.ai = null; gatesChanged(); flashToast('Removed the last gate'); } return; } if (S.sel?.kind === 'poi' && S.pois.length) S.pois.pop(); else S.pts.pop(); S.sel = null; S.dirty = true; renderPts(); flashToast('Removed the last point'); };
+  function setTilt(v) { S.tilt = Math.max(-90, Math.min(20, v)); $('tiltVal').textContent = `${S.tilt}°`; }
+  for (const [id, d] of [['tiltUp', 5], ['tiltDown', -5]]) {
+    let rep; const b = $(id);
+    b.addEventListener('pointerdown', () => { setTilt(S.tilt + d); rep = setInterval(() => setTilt(S.tilt + d), 140); });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(ev, () => clearInterval(rep));
+  }
+  let toastT;
+  function flashToast(t) {
+    const el = $('status').querySelector('.txt'); el.textContent = t; S.toastUntil = Date.now() + 1600;
+  }
+
+  // ================= sticks (Mode 2) =================
+  function pad(el, onMove) {
+    const knob = el.querySelector('i'); let id = null;
+    const set = e => { const r = el.getBoundingClientRect(), R = r.width / 2; let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R; const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } knob.style.transform = `translate(${x * R * .62}px, ${y * R * .62}px)`; onMove(x, -y); };
+    el.addEventListener('pointerdown', e => { id = e.pointerId; try { el.setPointerCapture(id); } catch {} set(e); if (S.mode === 'flying' || S.mode === 'paused') takeover(); else if (S.mode === 'idle' || S.mode === 'done') { S.mode = 'manual'; fetch(`/sim/mode?sid=${SID}&mode=manual`); } });
+    el.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
+    const end = e => { if (e.pointerId !== id) return; id = null; knob.style.transform = ''; onMove(0, 0); };
+    el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+  }
+  pad($('padL'), (x, y) => { S.sticks[2] = Math.abs(y) < .08 ? 0 : y; S.sticks[3] = Math.abs(x) < .08 ? 0 : x; });
+  pad($('padR'), (x, y) => { S.sticks[0] = Math.abs(y) < .08 ? 0 : y; S.sticks[1] = Math.abs(x) < .08 ? 0 : x; });
+
+  // ================= full screen =================
+  const standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+  $('fsBtn').hidden = !!standalone;
+  $('fsBtn').onclick = () => {
+    const d = document.documentElement, req = d.requestFullscreen || d.webkitRequestFullscreen;
+    if (document.fullscreenElement || document.webkitFullscreenElement) return (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    if (req) { const p = req.call(d); if (p?.then) p.then(() => screen.orientation?.lock?.('landscape').catch(() => {})).catch(() => fsHelp()); return; }
+    fsHelp();
+  };
+  function fsHelp() { alert('On iPhone: tap Share → "Add to Home Screen", then open it from your home screen. It runs full-screen like an app.'); }
+
+  // ================= video loop + status =================
+  // Two frame requests in flight hide the network round trip (the viewer serialises them per GPU and
+  // steps each by the wall time since the last, so the sim keeps real-time pace). Newest result wins.
+  let frameSeq = 0, frameShown = 0;
+  async function videoLoop(worker = 0) {
+    for (;;) {
+      if (!S.scene || document.hidden) { await new Promise(r => setTimeout(r, 300)); continue; }
+      if (worker > 0 && (S.real || S.screen !== 'fly')) { await new Promise(r => setTimeout(r, 300)); continue; }
+      if (S.real) { try { realTick(); render(); } catch (e) { console.warn('real tick', e); } await new Promise(r => setTimeout(r, 200)); continue; }
+      try {
+        const [f, r, u, y] = S.mode === 'manual' ? S.sticks : [0, 0, 0, 0];
+        const mySeq = ++frameSeq;
+        const res = await fetch(`/sim/frame?sid=${SID}&f=${f.toFixed(2)}&r=${r.toFixed(2)}&u=${u.toFixed(2)}&y=${y.toFixed(2)}&view=hd&pitch=${S.placing && S.mode === 'manual' ? S.tilt : -10}&noclip=0&cam=${S.placing ? 'fpv' : S.cam}${S.gatesKey && (S.run || S.watch || (S.placing && S.kind === 'race')) ? `&gates=${encodeURIComponent(S.gatesKey)}&next=${S.run ? S.run.next : S.watch ? watchNext() : (S.race?.gates.length || 0)}` : ''}`);
+        if (res.ok && mySeq < frameShown) { await res.arrayBuffer(); continue; }   // an older frame finished after a newer one
+        if (res.ok) {
+          frameShown = mySeq;
+          const st = JSON.parse(res.headers.get('X-State') || '{}');
+          if (S.st && st.collisions > S.st.collisions) { $('flash').style.opacity = 1; setTimeout(() => $('flash').style.opacity = 0, 300); navigator.vibrate?.(120); }
+          S.st = st; raceStep(st);
+          const blob = await res.blob();
+          if (S.screen === 'fly') { const url = URL.createObjectURL(blob), old = $('video').src; $('video').src = url; if (old.startsWith('blob:')) URL.revokeObjectURL(old); }
+          if (S.mode === 'flying' && st.replay && st.replay.t >= st.replay.duration - 0.05) { S.mode = 'done'; fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${st.replay.duration}`); }
+        }
+      } catch {}
+      render();
+      if (S.screen !== 'fly') await new Promise(r => setTimeout(r, 250));  // keep state fresh, save bandwidth
+    }
+  }
+  function render() {
+    if (S.real) return renderReal();
+    const st = S.st || {}, m = S.mode;
+    const [text, color] =
+      S.watch ? [(() => { const rt = st.replay?.race_t, n = S.watch.splits.length; return rt == null ? 'AI lap' : rt < 0 ? 'AI lap · run-up' : rt >= S.watch.time_s - 0.01 ? `AI finished · ${S.watch.time_s.toFixed(2)} s` : `AI · ${rt.toFixed(2)} s · gate ${Math.min(n, watchNext() + 1)}/${n}`; })() + (S.watch.paused ? ' · paused' : ''), 'var(--accent)'] :
+      S.run ? [S.run.done ? `Finished · ${S.run.splits.at(-1).toFixed(2)} s` : S.run.t0 == null ? `${S.race.name || 'Race'} · through gate 1 to start` : `${(performance.now() / 1000 - S.run.t0).toFixed(2)} s · gate ${S.run.next + 1}/${S.race.gates.length}`, S.run.done ? 'var(--ok)' : 'var(--accent)'] :
+      S.placing && S.kind === 'race' ? [`Race · ${S.race?.gates.length || 0} gate${S.race?.gates.length === 1 ? '' : 's'} · fly through and add the next`, 'var(--accent)'] :
+      S.placing ? [m === 'manual' ? 'Placing · fly to a spot, then add a waypoint' : 'Adding points as you fly', 'var(--accent)'] :
+      m === 'manual' ? ['You are flying · let go, then Re-arm', 'var(--bad)'] :
+      m === 'flying' ? [`Autopilot · ${S.active ? Math.round(S.active.length_m) : 0} m route`, 'var(--accent)'] :
+      m === 'paused' ? [S.pausedByLeave ? 'Hovering · you left the live view' : 'Paused · hovering', 'var(--warn)'] :
+      m === 'done' ? ['Route complete', 'var(--ok)'] : ['Sandbox · plan a route', 'var(--t3)'];
+    if (!(S.toastUntil > Date.now())) $('status').querySelector('.txt').textContent = text; $('status').querySelector('.dot').style.background = color;
+    const hits = (st.collisions ?? 0) - S.collisions0;
+    const poiI = st.replay?.poi ?? -1, poiName = poiI >= 0 && S.active?.pois?.[poiI] ? (S.active.pois[poiI].label || `Look ${poiI + 1}`) : '';
+    $('hud').textContent = st.pos ? `${st.pos[2].toFixed(1)} m   ${(st.speed ?? 0).toFixed(1)} m/s   ${st.clearance != null ? (+st.clearance).toFixed(1) : '--'} m clear${st.replay ? `   ${st.replay.t.toFixed(0)}/${st.replay.duration.toFixed(0)} s` : ''}${hits ? `   ${hits} hit${hits > 1 ? 's' : ''}` : ''}${poiName ? `\nLooking at ${poiName} · gimbal ${Math.round(st.replay?.gimbal_pitch_deg ?? -10)}°` : ''}` : '';
+    $('hud').style.color = hits > 0 ? 'var(--bad)' : '';
+    if (S.watch) $('hud').textContent = `AI best ${S.watch.time_s.toFixed(2)} s${S.race?.best ? ` · yours ${S.race.best.time_s.toFixed(2)} s` : ''}`;
+    if (S.run) $('hud').textContent = `${S.race.best ? `Best ${S.race.best.time_s.toFixed(2)} s` : 'No best yet'}${S.aiGhost ? ` · AI ${(+S.aiGhost.time_s).toFixed(2)} s` : ''}`;
+    if (S.placing) $('hud').textContent += `\n${S.pts.length} waypoint${S.pts.length === 1 ? '' : 's'} · ${S.pois.length} look-at${S.pois.length === 1 ? '' : 's'}`;
+    const pi = m === 'paused' || (m === 'watch' && S.watch?.paused) ? 'play' : 'pause'; if ($('pauseBtn').dataset.i !== pi) { $('pauseBtn').dataset.i = pi; $('pauseBtn').innerHTML = `<svg class="i"><use href="#i-${pi}"/></svg>`; } $('pauseBtn').disabled = !['flying', 'paused', 'watch'].includes(m);
+    const big = $('bigBtn');
+    document.body.classList.toggle('watching', !!S.watch);
+    if (S.placing || S.run || S.watch) big.hidden = true;
+    else if (m === 'manual') { big.hidden = false; big.textContent = 'Re-arm and continue'; big.onclick = rearm; }
+    else if (m === 'idle' && S.pts.length > 1) { big.hidden = false; big.textContent = 'Fly the route'; big.onclick = () => plan(null); }
+    else big.hidden = true;
+    if (S.screen === 'fly') { drawMini(); drawOverlay(); } else if (S.screen === 'plan' && (m === 'flying' || m === 'manual')) drawMap();
+  }
+
+  // ================= in the Flight Lab app: the real drone (window.FL, see AppActivity.kt) =================
+  // The page is loaded live from cradle inside the Android app. The native side draws the drone's
+  // video behind this (transparent) page and runs the mission; the RC sticks always override.
+  const APP = typeof window.FL !== 'undefined';
+  S.real = false; S.ds = null;
+  function setTarget(v) {
+    S.real = APP && v === 'real'; store.set('target', v);
+    document.documentElement.classList.toggle('real', S.real);
+    $('targetSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === (S.real ? 'real' : 'sim')));
+    $('realBtns').hidden = !S.real; $('padL').hidden = $('padR').hidden = S.real;
+    if (APP) FL.video(S.real);
+    if (S.real && ['flying', 'paused'].includes(S.mode)) pause();   // hold the sim drone while you fly the real one
+    $('go').textContent = S.real ? 'Fly for real' : 'Fly in sandbox';
+  }
+  // Real drone position on the splat map (GPS → scene), heading converted to the scene frame.
+  function realTick() {
+    let d; try { d = JSON.parse(FL.status()); } catch { return; }
+    S.ds = d;
+    if (d.lat != null && hasGeo() && S.calib) {
+      const [x, y] = llToScene(d.lat, d.lon), [x2, y2] = llToScene(d.lat + Math.cos((d.yaw || 0) * D2R) * 1e-5, d.lon + Math.sin((d.yaw || 0) * D2R) * 1e-5 / Math.cos(d.lat * D2R));
+      S.st = { pos: [x, y, d.alt ?? 0], yaw_deg: Math.atan2(y2 - y, x2 - x) / D2R, speed: d.vel_ned ? Math.hypot(d.vel_ned[0] ?? 0, d.vel_ned[1] ?? 0) : 0 };
+    } else S.st = null;
+  }
+  const REAL_TXT = {
+    IDLE: ['Real drone · plan a route, then Fly for real', 'var(--t3)'], LOADED: ['Mission loaded · put the drone on A', 'var(--t2)'],
+    TAKEOFF: ['Taking off', 'var(--accent)'], ARMING: ['Taking control', 'var(--accent)'], FLYING: ['Autopilot · RC sticks take over', 'var(--accent)'],
+    POLICY: ['Obstacle · learned policy is flying', 'var(--warn)'], PAUSED: ['Paused · hovering', 'var(--warn)'], HOLD: ['Holding', 'var(--warn)'],
+    MANUAL: ['You are flying · centre the sticks, then Re-arm', 'var(--bad)'], ARRIVED: ['Arrived', 'var(--ok)'], LANDING: ['Landing', 'var(--accent)'],
+    DONE: ['Mission complete', 'var(--ok)'], ABORTED: ['Stopped · hovering, RC has control', 'var(--warn)'],
+  };
+  function renderReal() {
+    const d = S.ds || {}, st = d.state || 'IDLE';
+    let [text, color] = !d.registered ? [sdkWhy(d), 'var(--warn)'] : !d.connected ? ['No drone · connect the RC and power on', 'var(--t3)'] : REAL_TXT[st] || [st, 'var(--t2)'];
+    if (st === 'HOLD' && d.hold) text = `Holding · ${d.hold}`;
+    if (d.latched && !['MANUAL'].includes(st)) [text, color] = [`RC override · ${d.latch_reason || 'sticks moved'}`, 'var(--bad)'];
+    if (d.pilot?.mode === 'shadow' && d.pilot.want && d.pilot.want !== 'mission' && st === 'FLYING') text = 'Shadow · the policy would take over here';
+    if (!(S.toastUntil > Date.now())) $('status').querySelector('.txt').textContent = text; $('status').querySelector('.dot').style.background = color;
+    $('hud').textContent = d.connected ? `${d.alt != null ? d.alt.toFixed(1) : '--'} m   ${S.st ? S.st.speed.toFixed(1) : '--'} m/s   ${d.battery >= 0 ? d.battery + '%' : '--'}   ${d.sats >= 0 ? d.sats + ' sats' : ''}${d.mission && ['FLYING', 'POLICY', 'PAUSED', 'HOLD', 'MANUAL'].includes(st) && d.remaining_m != null ? `   ${Math.round(d.remaining_m)} m left` : ''}${d.capturing ? '   rec' : ''}` : '';
+    $('hud').style.color = '';
+    const flying = ['FLYING', 'POLICY'].includes(st), held = ['PAUSED', 'HOLD'].includes(st);
+    const pi = held ? 'play' : 'pause'; if ($('pauseBtn').dataset.i !== pi) { $('pauseBtn').dataset.i = pi; $('pauseBtn').innerHTML = `<svg class="i"><use href="#i-${pi}"/></svg>`; } $('pauseBtn').disabled = !(flying || held);
+    const big = $('bigBtn');
+    if (d.landing_confirm) { big.hidden = false; big.textContent = 'Confirm landing'; big.onclick = () => FL.confirmLanding(); }
+    else if (st === 'MANUAL') { big.hidden = false; big.textContent = 'Re-arm and continue'; big.onclick = () => FL.rearm(); }
+    else if (d.latched) { big.hidden = false; big.textContent = 'Re-arm'; big.onclick = () => FL.rearm(); }
+    else if (['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && S.pts.length > 1 && d.connected) { big.hidden = false; big.textContent = 'Fly for real'; big.onclick = flyReal; }
+    else big.hidden = true;
+    if (S.screen === 'fly') { drawMini(); $('ov').getContext('2d').clearRect(0, 0, $('ov').width, $('ov').height); } else if (S.screen === 'plan') drawMap();
+  }
+  function sdkWhy(d) {
+    const s = d.sdk || {};
+    if (s.error) return `DJI SDK registration failed · ${s.error}`.slice(0, 90);
+    if (s.init && s.init !== 'INITIALIZE_COMPLETE') return `DJI SDK starting · ${String(s.init).toLowerCase().replace(/_/g, ' ')}`;
+    return 'DJI SDK registering (needs internet)';
+  }
+  function droneLine(d) {
+    if (!d.registered) return sdkWhy(d);
+    if (!d.connected) return 'SDK ready · no drone. Close DJI Fly, power on the drone, replug the RC';
+    return `Connected · ${d.battery >= 0 ? d.battery + '%' : '--'} · ${d.sats >= 0 ? d.sats : '--'} sats · ${String(d.state).toLowerCase()}${S.real ? '' : ' · switch to Real drone to fly it'}`;
+  }
+  async function flyReal() {
+    const d = S.ds || {};
+    if (!d.connected) return toast('No drone connected.');
+    toast('Planning with the real-flight margin');
+    let res; try { res = await sendMission(); } catch (e) { return toast(e.message); }
+    const m = res.mission, km = (m.sim_preview.length_m * (m.alignment.scale_corr || 1)).toFixed(0);
+    const air = S.air && !S.air.error ? S.air : null;
+    if (air?.level === 'bad') return toast(`FAA: ${air.verdict}`);
+    const msg = `${air?.controlled ? `Class ${air.class} airspace: do you have a LAANC authorization for now, up to ${air.ceiling_ft} ft?\n\n` : ''}Fly "${m.saved_name}" for real?\n\n${km} m at ${m.limits.cruise_speed_mps} m/s, up to ${m.limits.ceiling_m - 5} m.${d.flying ? '' : ' It takes off from here, so the drone must be on A.'}\nObstacle AI: ${d.pilot?.mode}. Handoff: ${m.obstacle_handoff}.${res.pinned ? '' : '\n\nThe map is not pinned to GPS here: use I\'m here first or A may be ~10 m off.'}\n\nAny RC stick movement takes over instantly.`;
+    if (!confirm(msg)) return;
+    FL.start();
+  }
+  function toast(t) { $('status').querySelector('.txt').textContent = t; S.toastUntil = Date.now() + 3500; }
+  if (APP) {
+    $('droneSet').hidden = false;
+    $('fsBtn').hidden = true;   // the app is already immersive full screen
+    try { const v = JSON.parse(FL.version()); $('appVer').textContent = `Flight Lab ${v.name}`; } catch {}
+    $('targetSeg').querySelectorAll('button').forEach(b => b.onclick = () => setTarget(b.dataset.v));
+    const aiSet = v => { FL.pilotMode(v); store.set('ai', v); $('aiSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === v)); };
+    $('aiSeg').querySelectorAll('button').forEach(b => b.onclick = () => aiSet(b.dataset.v));
+    aiSet(store.get('ai') || 'shadow');
+    $('labBtn').onclick = () => FL.openLab(); $('updBtn').onclick = () => FL.checkUpdate(); $('reloadBtn').onclick = () => FL.reload();
+    $('landBtn').onclick = () => { if (confirm('Land here?')) FL.land(); };
+    $('stopBtn').onclick = () => FL.abort();
+    const oldPause = $('pauseBtn').onclick; $('pauseBtn').onclick = () => S.real ? FL.pause() : oldPause();
+    const oldGo = $('go').onclick; $('go').onclick = (...a) => { if (!S.real) return oldGo?.(...a); show('fly'); flyReal(); };
+    setInterval(() => { let d; try { d = JSON.parse(FL.status()); } catch { return; } if (S.real) S.ds = d; $('droneInfo').textContent = droneLine(d); }, 1000);
+    $('diagBtn').onclick = () => FL.diagnostics();
+    window.flMessage = t => toast(t);
+    window.flBack = () => { if (S.placing) $('placeDone').click(); else if (S.screen !== 'fly') show('fly'); };
+    setTarget(store.get('target') || 'sim');
+  }
+
+  setLayer('h', S.layers.h); setLayer('faa', S.layers.faa); syncSpeed();
+  init(); videoLoop(0); setTimeout(() => videoLoop(1), 120);
+})();
+</script>
+</body>
+</html>

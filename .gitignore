@@ -1,0 +1,16 @@
+# secrets and raw data
+.env
+footage/
+# DJI's SDK clone (our changes live in android/: see tools/sync_android.sh)
+Mobile-SDK-Android-V5/
+# planner runtime data (missions and calibration carry GPS; logs; builds)
+planner/missions/
+planner/calib/
+planner/library/
+planner/applogs/
+planner/dl/
+planner/dl-mirror/
+planner/.circleback/
+*.apk
+.DS_Store
+__pycache__/

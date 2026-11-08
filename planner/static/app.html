@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flight Lab Preview</title>
+<style>
+:root {
+  --bg: #eef0f3; --fg: #15181d; --muted: #5d6673; --line: #d4d9df; --card: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg: #0b0d10; --fg: #e8ebef; --muted: #98a2ad; --line: #262b33; --card: #14181d; }
+}
+:root[data-theme="dark"] { --bg: #0b0d10; --fg: #e8ebef; --muted: #98a2ad; --line: #262b33; --card: #14181d; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 system-ui, -apple-system, sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 18px 16px 40px; }
+h1 { font-size: 18px; margin: 0 0 2px; }
+.sub { color: var(--muted); margin: 0 0 14px; font-size: 13px; }
+
+/* The phone: S23+ landscape is about 891 x 411 dp. Everything inside is laid out in dp and scaled to fit. */
+#fit { width: 100%; position: relative; }
+#phone { position: absolute; left: 0; top: 0; width: 891px; height: 411px; transform-origin: 0 0; border-radius: 26px;
+  background: #000; box-shadow: 0 0 0 10px #1b1d21, 0 0 0 11px #3a3d43, 0 18px 50px rgba(0,0,0,.35); overflow: hidden;
+  font-family: Roboto, system-ui, sans-serif; color: #fff; }
+#video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+#novideo { position: absolute; inset: 0; display: grid; place-items: center; color: #8a939e; font-size: 14px; }
+#status { position: absolute; left: 0; right: 0; top: 0; padding: 6px 12px; font-weight: 700; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#clock { position: absolute; top: 40px; left: 12px; font: 24px/1.1 ui-monospace, Menlo, monospace; color: #ffeb3b; background: rgba(0,0,0,.8); padding: 2px 10px; }
+#tele { position: absolute; left: 10px; bottom: 10px; font: 9.5px/1.35 ui-monospace, Menlo, monospace; background: rgba(0,0,0,.6); padding: 8px 10px; white-space: pre; max-width: 640px; }
+#panel { position: absolute; right: 0; top: 34px; bottom: 0; width: 220px; background: rgba(0,0,0,.6); padding: 6px 8px 10px; overflow-y: auto; scrollbar-width: thin; }
+#panel h6 { margin: 8px 2px 2px; font-size: 10px; letter-spacing: .06em; color: #b0bec5; font-weight: 500; }
+#panel button { display: block; width: 100%; margin: 5px 0; padding: 9px 8px; border: 0; border-radius: 2px; color: #fff; background: #37474f;
+  font: 500 12.5px Roboto, system-ui, sans-serif; text-align: center; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+#panel button:active { filter: brightness(1.25); }
+#panel button[disabled] { opacity: .45; cursor: default; }
+.blue { background: #1565c0 !important; } .green { background: #2e7d32 !important; } .red { background: #c62828 !important; }
+.dred { background: #b71c1c !important; } .orange { background: #ef6c00 !important; }
+#mini { position: absolute; right: 230px; top: 40px; width: 170px; height: 150px; border: 1px solid rgba(255,255,255,.35); background: rgba(0,0,0,.5); }
+#mini span { position: absolute; left: 4px; top: 2px; font-size: 9px; color: #cfd8dc; }
+#toast { position: absolute; left: 50%; bottom: 46px; transform: translateX(-50%); max-width: 70%; background: rgba(50,50,50,.95); color: #fff;
+  border-radius: 18px; padding: 8px 16px; font-size: 12.5px; text-align: center; opacity: 0; transition: opacity .25s; pointer-events: none; }
+#toast.on { opacity: 1; }
+
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 26px; }
+.row button { font: inherit; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); cursor: pointer; }
+.notes { margin-top: 18px; display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.notes div { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+.notes b { display: block; margin-bottom: 4px; }
+.notes p { margin: 0; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flight Lab mission runner: web preview</h1>
+  <p class="sub">What the phone screen shows while flying your latest planner mission. The video comes from the splat sim, flying the same planned path; the buttons match the app.</p>
+
+  <div id="fit">
+    <div id="phone">
+      <img id="video" alt="">
+      <div id="novideo">Waiting for video…</div>
+      <div id="status"></div>
+      <div id="clock">00.000</div>
+      <canvas id="mini" width="340" height="300"></canvas>
+      <div id="tele"></div>
+      <div id="panel">
+        <h6>MISSION</h6>
+        <button class="blue" data-a="load">Load latest mission</button>
+        <button class="green" data-a="start">▶ Start mission</button>
+        <button data-a="pause" id="pauseBtn">▶ Resume mission</button>
+        <button class="red" data-a="abort">■ Abort mission (hover)</button>
+        <button data-a="land">Land here</button>
+        <button class="orange" data-a="confirm" hidden>Confirm landing</button>
+        <button data-a="pilotmode" id="pilotBtn">Obstacle AI: shadow, beep only (tap)</button>
+        <h6>CAPTURE</h6>
+        <button class="dred" data-a="capture" id="capBtn">● Capture (4K SD + stream + GPS)</button>
+        <button data-a="phone">Upload last capture</button>
+        <button data-a="planner">Open planner</button>
+        <h6>CONTROL / TESTS</h6>
+        <button class="green" data-a="phone">Enable VS</button>
+        <button class="red" data-a="phone">Disable VS</button>
+        <button class="orange" data-a="rearm">Re-arm</button>
+        <button class="red" data-a="phone">STOP script (hover)</button>
+        <button data-a="phone">Step speed: 1 m/s (tap)</button>
+        <button data-a="phone">Axis map: roll=fwd (tap)</button>
+        <button data-a="phone">AXIS CHECK (0.5 m/s fwd)</button>
+        <button data-a="phone">Hover 10 s (wind drift)</button>
+        <button data-a="phone">Forward step</button>
+        <button data-a="phone">Start log</button>
+      </div>
+      <div id="toast"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <button id="rcBtn">Simulate RC stick input</button>
+    <button id="holdBtn">Simulate GPS drop (HOLD)</button>
+    <span class="sub" style="margin:0">Try these mid-flight to see the safety states.</span>
+  </div>
+
+  <div class="notes">
+    <div><b>Start</b><p>Takes off on its own if on the ground, hands control to the app, then follows every vertex of the planned path using GPS and the barometer. It never cuts corners.</p></div>
+    <div><b>Safety</b><p>Any RC stick input kills the mission at once and locks the app out until Re-arm. It holds and hovers on stale GPS, fewer than 10 satellites, low battery, or drifting off the path or off the planned height.</p></div>
+    <div><b>Camera</b><p>Faces the direction of travel, or looks at the nearest look-at point (yaw and gimbal tilt). FPV style keeps moving through gentle corners with a fixed tilt.</p></div>
+    <div><b>Mini-map (top right)</b><p>Shown here only. It isn't in the phone build yet; say if you want it there too.</p></div>
+  </div>
+</main>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const S = { m: null, fly: null, scene: null, geo: null, meta: null, topImg: null, state: 'IDLE', t: 0, t0: 0, running: false,
+              latched: false, vs: false, pilotMode: 'shadow', ws: null, pilot: { status: 'off', cmd: null, want: 'mission', rtt: NaN, sent: 0, ready: false }, seq: 0, lastSend: 0, capturing: false, capT0: 0, hold: '', groundA: 0, cum: [], lastSync: 0, activePoi: -1 };
+
+  // ---- scale the 891x411 dp phone to the page ----
+  function fit() {
+    const w = $('fit').clientWidth, s = Math.min(1.35, (w - 24) / 891);
+    $('phone').style.transform = `translate(12px, 12px) scale(${s})`;
+    $('fit').style.height = (411 * s + 24) + 'px';
+  }
+  addEventListener('resize', fit); fit();
+
+  // ---- helpers ----
+  let toastT;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('on'), 2600); }
+  async function j(url, opts) { const r = await fetch(url, opts); const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = { error: t }; } if (!r.ok) throw new Error(d.error || r.status); return d; }
+  const f = (v, d = 2) => (v == null || Number.isNaN(v)) ? '--' : v.toFixed(d);
+  const replay = q => fetch(`/sim/replay?id=${encodeURIComponent(S.fly.id)}${q ? '&' + q : ''}`).catch(() => {});
+  function setState(s, msg) { S.state = s; if (msg) toast(msg); }
+
+  function sample(t) {
+    const tr = S.fly.traj; let lo = 0, hi = tr.length - 1;
+    if (t <= tr[0].t) return tr[0]; if (t >= tr[hi].t) return tr[hi];
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (tr[mid].t <= t) lo = mid; else hi = mid; }
+    const a = tr[lo], b = tr[hi], k = (t - a.t) / (b.t - a.t), o = {};
+    for (const key of ['x', 'y', 'z', 'vx', 'vy', 'vz']) o[key] = a[key] + (b[key] - a[key]) * k;
+    let dy = b.yaw - a.yaw; if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI;
+    return { ...a, ...o, yaw: a.yaw + dy * k };
+  }
+
+  // Project the drone onto the planned path: which vertex is next, how far off, how far to go.
+  function track(p) {
+    const P = S.fly.path; let best = { d: Infinity };
+    for (let i = 0; i < P.length - 1; i++) {
+      const a = P[i], b = P[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2], L = Math.hypot(dx, dy, dz) || 1e-6;
+      const s = Math.max(0, Math.min(L, ((p.x - a[0]) * dx + (p.y - a[1]) * dy + (p.z - a[2]) * dz) / L));
+      const cx = a[0] + dx / L * s, cy = a[1] + dy / L * s, cz = a[2] + dz / L * s;
+      const d = Math.hypot(p.x - cx, p.y - cy, p.z - cz);
+      if (d < best.d - 1e-6) best = { d, i, s, L, cross: Math.hypot(p.x - cx, p.y - cy), alt: p.z - cz };
+    }
+    best.remaining = (best.L - best.s) + (S.cum.at(-1) - S.cum[best.i + 1]);
+    return best;
+  }
+
+  function latLon(x, y) {
+    const g = S.geo; if (!g || g.lat0 == null) return null;
+    const yaw = (g.yaw_deg || 0) * Math.PI / 180, e = x * Math.cos(yaw) - y * Math.sin(yaw), n = x * Math.sin(yaw) + y * Math.cos(yaw);
+    return [g.lat0 + n / 111195, g.lon0 + e / (111195 * Math.cos(g.lat0 * Math.PI / 180))];
+  }
+
+  // ---- pilot link (dji-rl docs/pilot-protocol.md). The web replay can't be steered, so it always runs as shadow. ----
+  let audio;
+  function beep() { try { audio = audio || new AudioContext(); const o = audio.createOscillator(), g = audio.createGain(); o.frequency.value = 880; g.gain.value = .15; o.connect(g).connect(audio.destination); o.start(); o.stop(audio.currentTime + .35); } catch {} }
+  function pilotConnect() {
+    pilotClose();
+    if (S.pilotMode === 'off') return;
+    const P = S.pilot; P.status = 'connecting…'; P.ready = false; P.cmd = null; P.want = 'mission'; P.sent = 0;
+    const ws = new WebSocket('wss://cradle.tailb1b51d.ts.net:8445/'); ws.binaryType = 'arraybuffer'; S.ws = ws;
+    ws.onopen = () => { P.status = 'connected, waiting for ready'; ws.send(JSON.stringify({ type: 'hello', mission: S.m, mode: 'shadow' })); };
+    ws.onmessage = ev => {
+      let d; try { d = JSON.parse(ev.data); } catch { return; }
+      if (d.type === 'ready') { P.ready = true; P.status = `ready (${d.scene}, ${d.mode})${d.warnings?.length ? ' ⚠ ' + d.warnings.join('; ') : ''}`; }
+      else if (d.type === 'error') { P.status = `server error: ${d.error}`; toast(`Pilot server: ${d.error}`); }
+      else if (d.type === 'pong') P.rtt = performance.now() - d.t_ms;
+      else if (d.type === 'cmd') {
+        P.cmd = d;
+        if (d.want !== P.want) {
+          if (d.want === 'policy' || d.want === 'hover') { beep(); toast(d.want === 'policy' ? `SHADOW: the policy would take over here (p_brake ${(+d.p_brake).toFixed(2)}, ${d.reason || ''}).` : `SHADOW: the server would hover here (${d.reason || ''}).`); }
+          else if (d.rejoin) toast(`Path clear: would rejoin at point ${d.rejoin.route_idx + 1}.`);
+          P.want = d.want;
+        }
+      }
+    };
+    ws.onclose = () => { if (S.ws === ws) { P.status = 'link lost'; P.ready = false; S.ws = null; } };
+    clearInterval(S.pingT); S.pingT = setInterval(() => S.ws?.readyState === 1 && S.ws.send(JSON.stringify({ type: 'ping', t_ms: performance.now() })), 2000);
+  }
+  function pilotClose() { if (S.ws) { const w = S.ws; S.ws = null; w.close(); } S.pilot.ready = false; S.pilot.status = S.pilotMode === 'off' ? 'off' : 'disconnected'; }
+  async function pilotSend(jpeg) {
+    const P = S.pilot, now = performance.now();
+    if (!S.ws || S.ws.readyState !== 1 || !P.ready || now - S.lastSend < 95 || !S.running) return;
+    S.lastSend = now;
+    const p = sample(S.t), a = S.m.sim_request.a;
+    // pos_rel is real metres from takeoff (what the phone measures): apply the mission's scale/heading alignment like the planner's toReal().
+    const k = S.m.alignment?.scale_corr ?? 1, tr = (S.m.alignment?.yaw_trim_deg ?? 0) * Math.PI / 180, dx = (p.x - a.x) * k, dy = (p.y - a.y) * k;
+    const header = { seq: ++S.seq, t_ms: Math.round(now), pos_rel: { e: dx * Math.cos(tr) - dy * Math.sin(tr), n: dx * Math.sin(tr) + dy * Math.cos(tr), up: (p.z - S.groundA) * k },
+      vel_ned: [p.vy, p.vx, -p.vz], yaw_deg: ((90 - p.yaw * 180 / Math.PI) % 360 + 360) % 360, gimbal_pitch_deg: p.gimbal_pitch_deg ?? -10,
+      flying_by: S.latched ? 'rc' : S.state === 'FLYING' ? 'mission' : 'hover', ground_h_m: null };
+    const h = new TextEncoder().encode(JSON.stringify(header)), img = new Uint8Array(await jpeg.arrayBuffer());
+    const buf = new Uint8Array(4 + h.length + img.length); new DataView(buf.buffer).setUint32(0, h.length); buf.set(h, 4); buf.set(img, 4 + h.length);
+    S.ws.send(buf); P.sent++;
+  }
+
+  // ---- actions (mirror MissionRunner) ----
+  async function load() {
+    if (!['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(S.state)) return toast('Finish or abort the current mission first.');
+    toast('Loading latest mission…');
+    try {
+      const pick = new URLSearchParams(location.search).get('mission');
+      const m = await j(`/api/missions/${pick ? encodeURIComponent(pick) : 'latest'}`);
+      if (!m.sim_request) return toast('This mission was saved before previews were attached. Press Launch again in the planner.');
+      const [fly, scenes] = await Promise.all([
+        j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(m.sim_request) }),
+        j('/sim/api/sim/scenes'),
+      ]);
+      if (!fly.ok) return toast(`The sim couldn't fly this mission: ${fly.reason || 'unknown'}`);
+      S.m = m; S.fly = fly; S.scene = m.sim_request.scene;
+      const sc = (Array.isArray(scenes) ? scenes : scenes.scenes).find(s => s.name === S.scene); S.geo = sc?.geo;
+      S.groundA = m.sim_request.takeoff_land ? Math.max(0, fly.traj[0].z - 0.35) : 0;
+      S.cum = [0]; for (let i = 1; i < fly.path.length; i++) { const a = fly.path[i - 1], b = fly.path[i]; S.cum.push(S.cum[i - 1] + Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2])); }
+      S.meta = await j(`/sim/api/sim/topdown.json?scene=${encodeURIComponent(S.scene)}`);
+      S.topImg = new Image(); S.topImg.src = `/sim/api/sim/topdown?scene=${encodeURIComponent(S.scene)}&px=512`; S.topImg.onload = mini;
+      S.t = 0; S.running = false; S.hold = ''; S.activePoi = -1;
+      await replay(''); await replay('t=0');
+      setState('LOADED', `Loaded ${m.saved_name || m.name}: ${fly.path.length} points, ${Math.round(fly.length_m)} m at ${m.limits?.cruise_speed_mps ?? '?'} m/s (${m.flight_style}). Place the drone on A, then Start.`);
+      $('novideo').hidden = true; mini();
+    } catch (e) { toast(`Couldn't load a mission: ${e.message}`); }
+  }
+
+  function start() {
+    if (!S.fly) return toast('Load a mission first.');
+    if (!['LOADED', 'DONE', 'ABORTED'].includes(S.state)) return toast('Mission already running.');
+    if (S.latched) return toast("Can't start: RC override is latched. Centre sticks and Re-arm.");
+    S.t = 0; S.vs = true; S.hold = '';
+    pilotConnect();
+    setState(S.m.sim_request.takeoff_land ? 'TAKEOFF' : 'FLYING', S.m.sim_request.takeoff_land ? 'Taking off…' : `Flying ${S.m.name}. Any RC stick input takes over.`);
+    run();
+  }
+  function run() { S.running = true; S.t0 = performance.now() - S.t * 1000; S.lastSync = performance.now(); replay(`t=play&from=${S.t.toFixed(2)}`); }
+  function freeze() { S.running = false; replay(`t=${S.t.toFixed(2)}`); }
+
+  function pause() {
+    if (S.state === 'FLYING' || S.state === 'TAKEOFF') { freeze(); setState('PAUSED', 'Paused, hovering. Resume to continue.'); }
+    else if (S.state === 'PAUSED' || S.state === 'HOLD') { if (S.latched) return toast("Can't resume: RC override is latched."); S.hold = ''; setState('FLYING', 'Resumed.'); run(); }
+    else toast('Nothing to pause.');
+  }
+  function abort(why = 'abort pressed') {
+    if (['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(S.state)) return;
+    freeze(); setState('ABORTED', `Mission aborted (${why}). Hovering; take over with the RC or Disable VS.`);
+  }
+  function land() {
+    if (!S.fly || !['FLYING', 'PAUSED', 'HOLD', 'ABORTED', 'ARRIVED'].includes(S.state)) return toast('Not flying.');
+    freeze(); S.vs = false; setState('LANDING', 'Landing…');
+    setTimeout(() => { if (S.state === 'LANDING') setState('DONE', 'Landed. Mission complete.'); }, 3500);
+  }
+  function rc() {
+    if (!S.vs) return toast('RC already has control (virtual stick off).');
+    S.latched = true; S.vs = false;
+    if (['FLYING', 'PAUSED', 'HOLD', 'TAKEOFF'].includes(S.state)) { freeze(); S.state = 'ABORTED'; }
+    toast('RC OVERRIDE: app locked. Centre sticks, tap Re-arm.');
+  }
+  function gpsHold() {
+    if (S.state !== 'FLYING') return toast('Start the mission first.');
+    freeze(); S.hold = 'no fresh GPS position'; setState('HOLD', 'HOLDING: no fresh GPS position. Fix it and Resume, or take over with the RC.');
+  }
+
+  document.querySelectorAll('#panel button').forEach(b => b.onclick = () => ({
+    load, start, pause, abort: () => abort(), land,
+    confirm: () => toast('Landing confirmed.'),
+    rearm: () => { if (!S.latched) return toast('Not latched.'); S.latched = false; toast('Re-armed. Tap Enable to hand control to the app.'); },
+    capture: () => { S.capturing = !S.capturing; S.capT0 = performance.now(); $('capBtn').textContent = S.capturing ? '■ Stop capture' : '● Capture (4K SD + stream + GPS)'; },
+    planner: () => window.open('/#sim', '_blank'),
+    pilotmode: () => {
+      if (['FLYING', 'TAKEOFF'].includes(S.state)) return toast('Change the obstacle mode before starting.');
+      S.pilotMode = S.pilotMode === 'shadow' ? 'off' : 'shadow';
+      $('pilotBtn').textContent = S.pilotMode === 'off' ? 'Obstacle AI: off (tap)' : 'Obstacle AI: shadow, beep only (tap)';
+      if (S.pilotMode === 'off') pilotClose();
+    },
+    phone: () => toast('Phone only: this test button talks to the drone directly.'),
+  })[b.dataset.a]?.());
+  $('rcBtn').onclick = rc; $('holdBtn').onclick = gpsHold;
+
+  // ---- video: the sim's first-person camera following the replay ----
+  async function videoLoop() {
+    for (;;) {
+      if (S.fly) {
+        try {
+          const r = await fetch('/sim/frame?f=0&r=0&u=0&y=0&view=hd&pitch=-10&noclip=0&cam=fpv');
+          if (r.ok) { const blob = await r.blob(); pilotSend(blob); const u = URL.createObjectURL(blob); const old = $('video').src; $('video').src = u; if (old.startsWith('blob:')) URL.revokeObjectURL(old); }
+        } catch {}
+      } else await new Promise(r => setTimeout(r, 400));
+      await new Promise(r => setTimeout(r, 60));
+    }
+  }
+  videoLoop();
+
+  // ---- mini-map ----
+  function mini() {
+    const c = $('mini'), g = c.getContext('2d'); g.clearRect(0, 0, c.width, c.height);
+    if (!S.meta || !S.fly) return;
+    const M = S.meta, P = S.fly.path;
+    const xs = P.map(p => p[0]), ys = P.map(p => p[1]), pad = 15;
+    const bx0 = Math.min(...xs) - pad, bx1 = Math.max(...xs) + pad, by0 = Math.min(...ys) - pad, by1 = Math.max(...ys) + pad;
+    const s = Math.min(c.width / (bx1 - bx0), c.height / (by1 - by0));
+    const ox = (c.width - (bx1 - bx0) * s) / 2, oy = (c.height - (by1 - by0) * s) / 2;
+    const T = (x, y) => [ox + (x - bx0) * s, oy + (by1 - y) * s];
+    if (S.topImg?.complete && S.topImg.naturalWidth) {
+      const [ix, iy] = T(M.x0, M.y1), [jx, jy] = T(M.x1, M.y0);
+      g.globalAlpha = .85; g.drawImage(S.topImg, ix, iy, jx - ix, jy - iy); g.globalAlpha = 1;
+    }
+    g.lineWidth = 3; g.strokeStyle = '#4fc3f7'; g.beginPath(); P.forEach((p, i) => { const [x, y] = T(p[0], p[1]); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke();
+    P.forEach((p, i) => { const [x, y] = T(p[0], p[1]); g.fillStyle = i === 0 ? '#66bb6a' : '#fff'; g.beginPath(); g.arc(x, y, 4, 0, 7); g.fill(); });
+    for (const q of S.fly.pois || []) { const [x, y] = T(q.x, q.y); g.fillStyle = '#ffca28'; g.fillRect(x - 4, y - 4, 8, 8); }
+    if (S.state !== 'LOADED' || S.t > 0) {
+      const p = sample(S.t), [x, y] = T(p.x, p.y), h = Math.PI / 2 - p.yaw;
+      g.save(); g.translate(x, y); g.rotate(h); g.fillStyle = '#ff5252'; g.beginPath(); g.moveTo(0, -10); g.lineTo(7, 8); g.lineTo(-7, 8); g.closePath(); g.fill(); g.restore();
+    }
+    g.fillStyle = 'rgba(0,0,0,.55)'; g.fillRect(0, 0, 100, 20); g.fillStyle = '#cfd8dc'; g.font = '16px system-ui'; g.fillText('map (web only)', 6, 15);
+  }
+
+  // ---- main loop: clock, state, status bar, telemetry ----
+  function frame(now) {
+    const ms = Date.now() % 100000; $('clock').textContent = `${String(Math.floor(ms / 1000)).padStart(2, '0')}.${String(ms % 1000).padStart(3, '0')}`;
+    if (S.fly && S.running) {
+      const dur = S.fly.traj.at(-1).t;
+      S.t = Math.min(dur, (now - S.t0) / 1000);
+      if (now - S.lastSync > 5000) { replay(`t=play&from=${S.t.toFixed(2)}`); S.lastSync = now; }
+      const p = sample(S.t), alt = p.z - S.groundA;
+      if (S.state === 'TAKEOFF' && alt > 1.0) setState('FLYING', `Flying ${S.m.name}. Any RC stick input takes over.`);
+      if (S.state === 'FLYING' && S.m.sim_request.takeoff_land && S.t > dur - 1 && alt < 3) setState('LANDING', 'Arrived. Landing…');
+      if (S.t >= dur) { pilotClose(); S.running = false; replay(`t=${dur.toFixed(2)}`); S.vs = false; setState(S.m.sim_request.takeoff_land ? 'DONE' : 'ARRIVED', S.m.sim_request.takeoff_land ? 'Landed. Mission complete.' : 'Arrived. Hovering at the end point; land with the RC or tap Land.'); }
+      mini();
+    }
+    render();
+    requestAnimationFrame(frame);
+  }
+
+  function render() {
+    const st = S.state, name = (S.m?.saved_name || S.m?.name || '').slice(0, 28);
+    const p = S.fly ? sample(S.t) : null, tk = p ? track(p) : null;
+    const pts = S.fly ? S.fly.path.length - 1 : 0;
+    const label = tk ? `point ${Math.min(pts, tk.i + 1)}/${pts}` : '';
+    const capSecs = Math.floor((performance.now() - S.capT0) / 1000);
+    const [text, color] =
+      S.capturing && !S.latched && st !== 'FLYING' ? [`● CAPTURING ${capSecs}s · stream ${(capSecs * 0.9).toFixed(1)} MB · SD recording`, '#b71c1c'] :
+      st === 'FLYING' && !S.latched && S.pilot.want !== 'mission' ? [`SHADOW: policy would take over now (${S.pilot.cmd?.reason || ''}) · mission continues`, '#8e24aa'] :
+      st === 'FLYING' && !S.latched ? [`MISSION ${name} · ${label} · ${Math.round(tk.remaining)} m left  (RC stick = take over)`, '#1565c0'] :
+      st === 'HOLD' ? [`MISSION HOLD: ${S.hold}`, '#ef6c00'] :
+      st === 'PAUSED' ? ['MISSION PAUSED · hovering', '#f9a825'] :
+      ['TAKEOFF', 'ARMING', 'LANDING', 'ARRIVED'].includes(st) ? [`MISSION ${st}`, '#1565c0'] :
+      S.latched ? ['RC OVERRIDE LATCHED: RC stick input. Centre sticks, tap Re-arm.', '#c62828'] :
+      S.vs ? ['APP CONTROL (advanced velocity), hovering. RC stick = override', '#2e7d32'] :
+      ['RC CONTROL (virtual stick off). Override armed.', '#455a64'];
+    $('status').textContent = text; $('status').style.background = color;
+    $('pauseBtn').textContent = st === 'FLYING' || st === 'TAKEOFF' ? '❚❚ Pause mission' : '▶ Resume mission';
+
+    if (!p) { $('tele').textContent = 'No mission loaded. Tap "Load latest mission".'; return; }
+    const moving = S.running;
+    const yawDeg = 90 - p.yaw * 180 / Math.PI, yr = p.yaw;
+    const fwd = moving ? p.vx * Math.cos(yr) + p.vy * Math.sin(yr) : 0, right = moving ? p.vx * Math.sin(yr) - p.vy * Math.cos(yr) : 0;
+    const ll = latLon(p.x, p.y);
+    const alt = p.z - S.groundA, batt = Math.max(30, Math.round(92 - S.t * 0.05));
+    const cmd = moving ? [fwd, right, p.vz, 0] : [0, 0, 0, 0];
+    $('tele').textContent = [
+      `vel body  fwd ${f(fwd)}  right ${f(right)}  up ${f(moving ? p.vz : 0)} m/s`,
+      `cmd       fwd ${f(cmd[0])}  right ${f(cmd[1])}  up ${f(cmd[2])}  yaw ${f(cmd[3], 0)} dps  sent=${S.vs && !S.latched}`,
+      `att       pitch ${f(-fwd * 4, 1)}  roll ${f(right * 4, 1)}  yaw ${f(((yawDeg + 540) % 360) - 180, 1)}`,
+      `alt rel   ${f(alt, 1)} m   ultrasonic ${alt < 5 ? f(alt, 2) : '--'} (used=${alt < 5})`,
+      `gps sats  ${S.hold ? 4 : 19}   flying=${alt > 0.3}  motors=${alt > 0.3 || moving}  batt ${batt}%`,
+      `rc        L(0,0) R(0,0)  cmds sent ${Math.round(S.t * 25)}`,
+      `gps       ${ll ? `${ll[0].toFixed(7)}, ${ll[1].toFixed(7)}` : '--'}  gimbal p ${f(p.gimbal_pitch_deg ?? -10, 0)}`,
+      `mission   ${st}  ${label}  off-path ${f(tk.cross, 1)} m  height err ${f(tk.alt, 1)} m  to next ${f(tk.L - tk.s, 1)} m  poi ${p.poi ?? -1}`,
+      ...(S.pilotMode !== 'off' ? [`pilot     SHADOW ${S.pilot.status}  rtt ${f(S.pilot.rtt, 0)} ms  frames ${S.pilot.sent}` + (S.pilot.cmd ? `  hazard ${S.pilot.cmd.hazard} p_brake ${f(+S.pilot.cmd.p_brake)} clear ${f(+S.pilot.cmd.clear_m, 1)} m want ${S.pilot.cmd.want} xtrack ${f(+S.pilot.cmd.xtrack_m, 1)} m srv ${f(+S.pilot.cmd.server_ms, 0)} ms` : '')] : []),
+      `mode      ${S.vs ? 'VIRTUAL_STICK' : 'GPS'}  wind LEVEL_0  video pkts ${Math.round(S.t * 30)}`,
+      `log       ${S.state !== 'LOADED' ? 'flightlab_<stamp>.csv' : 'off'}  rows ${Math.round(S.t * 50)}`,
+    ].join('\n');
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

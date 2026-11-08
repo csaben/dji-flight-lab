@@ -1,0 +1,408 @@
+diff --git a/SampleCode-V5/android-sdk-v5-sample/build.gradle b/SampleCode-V5/android-sdk-v5-sample/build.gradle
+index ea182da..421ec98 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/build.gradle
++++ b/SampleCode-V5/android-sdk-v5-sample/build.gradle
+@@ -10,8 +10,10 @@ android {
+         applicationId "com.dji.sampleV5.aircraft"
+         minSdkVersion Integer.parseInt(project.ANDROID_MIN_SDK_VERSION)
+         targetSdkVersion Integer.parseInt(project.ANDROID_TARGET_SDK_VERSION)
+-        versionCode 1
+-        versionName "1.0"
++        // Flight Lab self-update: every build is newer than the last (minutes since 2026-01-01).
++        def flBuilt = System.currentTimeMillis()
++        versionCode((int) ((flBuilt - 1767225600000L) / 60000L))
++        versionName new java.text.SimpleDateFormat("yyyy.MM.dd-HHmm").format(new java.util.Date(flBuilt))
+         manifestPlaceholders["API_KEY"] = project.AIRCRAFT_API_KEY
+         manifestPlaceholders["GMAP_API_KEY"] = project.GMAP_API_KEY
+         manifestPlaceholders["MAPLIBRE_TOKEN"] = project.MAPLIBRE_TOKEN
+@@ -61,6 +63,12 @@ android {
+         freeCompilerArgs += ["-Xjvm-default=all"]
+     }
+ 
++    // Flight Lab: leave out the DJI sample's demo-only assets (FlySafe test DB, silent-upgrade test APK,
++    // MOP pipeline video), about 30 MB of every download.
++    androidResources {
++        ignoreAssetsPattern "!.svn:!.git:!.ds_store:!*.scc:.*:<dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~:!de.geojson:!app-debug.apk:!mopSample.mp4"
++    }
++
+     //关闭lint
+     lintOptions {
+         checkReleaseBuilds false
+@@ -131,4 +139,5 @@ dependencies {
+     implementation deps.dom
+     kapt deps.glidecompiler
+     implementation deps.lynx
++    implementation deps.okhttp3
+ }
+\ No newline at end of file
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/AndroidManifest.xml b/SampleCode-V5/android-sdk-v5-sample/src/main/AndroidManifest.xml
+index 4134776..86b623f 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/AndroidManifest.xml
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/AndroidManifest.xml
+@@ -35,6 +35,7 @@
+         android:supportsRtl="true"
+         android:requestLegacyExternalStorage="true"
+         android:extractNativeLibs="true"
++        android:networkSecurityConfig="@xml/network_security_config"
+         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+ 
+         <meta-data
+@@ -62,7 +63,18 @@
+             android:screenOrientation="landscape"
+             android:configChanges="orientation|screenSize|keyboardHidden"
+             android:exported="true">
++        </activity>
+ 
++        <!-- Flight Lab app: the live sandbox + real-drone bridge. The SDK sample menu is still reachable from it. -->
++        <activity
++            android:name="dji.sampleV5.aircraft.flightlab.AppActivity"
++            android:label="Flight Lab"
++            android:theme="@style/full_screen_theme"
++            android:screenOrientation="sensorLandscape"
++            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
++            android:hardwareAccelerated="true"
++            android:launchMode="singleTask"
++            android:exported="true">
+             <intent-filter>
+                 <action android:name="android.intent.action.MAIN" />
+                 <category android:name="android.intent.category.LAUNCHER" />
+@@ -93,6 +105,12 @@
+             android:configChanges="orientation|screenSize|keyboardHidden"
+             android:exported="false"/>
+ 
++        <activity android:name="dji.sampleV5.aircraft.flightlab.FlightLabActivity"
++            android:theme="@style/full_screen_theme"
++            android:screenOrientation="landscape"
++            android:configChanges="orientation|screenSize|keyboardHidden"
++            android:exported="false"/>
++
+         <activity android:name="dji.sampleV5.aircraft.AircraftTestingToolsActivity"
+             android:theme="@style/full_screen_theme"
+             android:screenOrientation="landscape"
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/DJIAircraftMainActivity.kt b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/DJIAircraftMainActivity.kt
+index 2718e83..1fc01e0 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/DJIAircraftMainActivity.kt
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/DJIAircraftMainActivity.kt
+@@ -28,5 +28,8 @@ class DJIAircraftMainActivity : DJIMainActivity() {
+ 
+     override fun prepareTestingToolsActivity() {
+         enableTestingTools(AircraftTestingToolsActivity::class.java)
++        findViewById<android.view.View>(R.id.flight_lab_button)?.setOnClickListener {
++            startActivity(android.content.Intent(this, dji.sampleV5.aircraft.flightlab.FlightLabActivity::class.java))
++        }
+     }
+ }
+\ No newline at end of file
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/UsbAttachActivity.java b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/UsbAttachActivity.java
+index 2877f4c..90ff706 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/UsbAttachActivity.java
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/UsbAttachActivity.java
+@@ -11,8 +11,8 @@ public class UsbAttachActivity extends AppCompatActivity {
+     @Override
+     protected void onCreate(@Nullable Bundle savedInstanceState) {
+         super.onCreate(savedInstanceState);
+-        Intent intent = new Intent(this, DJIAircraftMainActivity.class);
+-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
++        Intent intent = new Intent(this, dji.sampleV5.aircraft.flightlab.AppActivity.class);
++        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+         startActivity(intent);
+         finish();
+     }
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/models/VirtualStickVM.kt b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/models/VirtualStickVM.kt
+index 934d52b..8197ff0 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/models/VirtualStickVM.kt
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/models/VirtualStickVM.kt
+@@ -1,7 +1,11 @@
+ package dji.sampleV5.aircraft.models
+ 
++import android.util.Log
+ import androidx.lifecycle.MutableLiveData
+ import dji.sdk.keyvalue.key.RemoteControllerKey
++import dji.v5.common.error.IDJIError
++import dji.v5.ux.util.ToastUtils
++import kotlin.math.abs
+ import dji.sdk.keyvalue.value.flightcontroller.*
+ import dji.v5.common.callback.CommonCallbacks
+ import dji.v5.et.create
+@@ -35,17 +39,41 @@ class VirtualStickVM : DJIViewModel() {
+     // RC Stick Value
+     var stickValue = MutableLiveData(RCStickValue(0, 0, 0, 0))
+ 
++    // --- RC override latch -------------------------------------------------
++    // While virtual stick is enabled, any physical RC stick input beyond the
++    // deadband (or virtual stick being dropped by anything other than this app,
++    // e.g. the RC pause button) trips a latch: sticks are zeroed, advanced mode
++    // and virtual stick are disabled so the RC has control, and every send from
++    // this app is blocked until the pilot centres the sticks and taps Re-arm.
++    val rcOverrideLatched = MutableLiveData(false)
++    val rcOverrideReason = MutableLiveData("")
++
++    @Volatile
++    private var latched = false
++
++    @Volatile
++    private var selfDisabling = false
++
++    @Volatile
++    private var vsEnabled = false
++
+     init {
+         currentSpeedLevel.value = VirtualStickManager.getInstance().speedLevel
+         VirtualStickManager.getInstance().setVirtualStickStateListener(object :
+             VirtualStickStateListener {
+             override fun onVirtualStickStateUpdate(stickState: VirtualStickState) {
++                val wasEnabled = vsEnabled
++                vsEnabled = stickState.isVirtualStickEnable
++                if (wasEnabled && !vsEnabled && !selfDisabling && !latched) {
++                    tripOverride("virtual stick dropped externally (owner=${stickState.currentFlightControlAuthorityOwner})")
++                }
+                 currentVirtualStickStateInfo.postValue(currentVirtualStickStateInfo.value?.apply {
+                     this.state = stickState
+                 })
+             }
+ 
+             override fun onChangeReasonUpdate(reason: FlightControlAuthorityChangeReason) {
++                Log.i(TAG, "flight control authority change reason: $reason")
+                 currentVirtualStickStateInfo.postValue(currentVirtualStickStateInfo.value?.apply {
+                     this.reason = reason
+                 })
+@@ -53,12 +81,95 @@ class VirtualStickVM : DJIViewModel() {
+         })
+     }
+ 
++    private fun sticksCentered(): Boolean {
++        val s = stickValue.value ?: return true
++        return maxOf(abs(s.leftHorizontal), abs(s.leftVertical), abs(s.rightHorizontal), abs(s.rightVertical)) <= RC_DEADBAND
++    }
++
++    private fun checkRcOverride() {
++        // "Use RC stick as virtual stick" deliberately routes RC input through the app.
++        if (latched || !vsEnabled || useRcStick.value == true) return
++        if (!sticksCentered()) tripOverride("RC stick input: ${stickValue.value?.toString()?.replace("\n", " ")}")
++    }
++
++    private fun tripOverride(reason: String) {
++        if (latched) return
++        latched = true
++        Log.w(TAG, "RC OVERRIDE LATCHED: $reason")
++        val vsm = VirtualStickManager.getInstance()
++        vsm.leftStick.horizontalPosition = 0
++        vsm.leftStick.verticalPosition = 0
++        vsm.rightStick.horizontalPosition = 0
++        vsm.rightStick.verticalPosition = 0
++        useRcStick.postValue(false)
++        selfDisabling = true
++        vsm.setVirtualStickAdvancedModeEnabled(false)
++        vsm.disableVirtualStick(object : CommonCallbacks.CompletionCallback {
++            override fun onSuccess() {
++                selfDisabling = false
++                Log.w(TAG, "RC override: virtual stick disabled, RC has control")
++            }
++
++            override fun onFailure(error: IDJIError) {
++                selfDisabling = false
++                Log.e(TAG, "RC override: disableVirtualStick failed: $error")
++            }
++        })
++        rcOverrideReason.postValue(reason)
++        rcOverrideLatched.postValue(true)
++        ToastUtils.showToast("RC OVERRIDE: app control locked. Centre sticks, then tap Re-arm.")
++    }
++
++    /** Clears the latch. Does not re-enable virtual stick; the pilot must do that explicitly. */
++    fun rearm() {
++        if (!latched) {
++            ToastUtils.showToast("Not latched.")
++            return
++        }
++        if (!sticksCentered()) {
++            ToastUtils.showToast("Centre the RC sticks before re-arming.")
++            return
++        }
++        latched = false
++        Log.w(TAG, "RC override re-armed by pilot")
++        rcOverrideReason.postValue("")
++        rcOverrideLatched.postValue(false)
++        ToastUtils.showToast("Re-armed. Tap Enable Virtual Stick to hand control back to the app.")
++    }
++
++    private fun blocked(what: String): Boolean {
++        if (latched) {
++            Log.w(TAG, "blocked by RC override latch: $what")
++            return true
++        }
++        return false
++    }
++
+     fun enableVirtualStick(callback: CommonCallbacks.CompletionCallback) {
++        if (blocked("enableVirtualStick")) {
++            ToastUtils.showToast("RC override latched. Centre sticks and tap Re-arm first.")
++            return
++        }
++        if (useRcStick.value != true && !sticksCentered()) {
++            ToastUtils.showToast("Centre the RC sticks before enabling virtual stick.")
++            return
++        }
+         VirtualStickManager.getInstance().enableVirtualStick(callback)
+     }
+ 
+     fun disableVirtualStick(callback: CommonCallbacks.CompletionCallback) {
+-        VirtualStickManager.getInstance().disableVirtualStick(callback)
++        selfDisabling = true
++        VirtualStickManager.getInstance().disableVirtualStick(object : CommonCallbacks.CompletionCallback {
++            override fun onSuccess() {
++                selfDisabling = false
++                callback.onSuccess()
++            }
++
++            override fun onFailure(error: IDJIError) {
++                selfDisabling = false
++                callback.onFailure(error)
++            }
++        })
+     }
+ 
+     fun setSpeedLevel(speedLevel: Double) {
+@@ -67,16 +178,19 @@ class VirtualStickVM : DJIViewModel() {
+     }
+ 
+     fun setLeftPosition(horizontal: Int, vertical: Int) {
++        if (latched) return
+         VirtualStickManager.getInstance().leftStick.horizontalPosition = horizontal
+         VirtualStickManager.getInstance().leftStick.verticalPosition = vertical
+     }
+ 
+     fun setRightPosition(horizontal: Int, vertical: Int) {
++        if (latched) return
+         VirtualStickManager.getInstance().rightStick.horizontalPosition = horizontal
+         VirtualStickManager.getInstance().rightStick.verticalPosition = vertical
+     }
+ 
+     fun sendVirtualStickAdvancedParam(param: VirtualStickFlightControlParam) {
++        if (blocked("sendVirtualStickAdvancedParam")) return
+         VirtualStickManager.getInstance().sendVirtualStickAdvancedParam(param)
+     }
+ 
+@@ -85,6 +199,7 @@ class VirtualStickVM : DJIViewModel() {
+     }
+ 
+     fun enableVirtualStickAdvancedMode() {
++        if (blocked("enableVirtualStickAdvancedMode")) return
+         VirtualStickManager.getInstance().setVirtualStickAdvancedModeEnabled(true)
+     }
+ 
+@@ -117,6 +232,8 @@ class VirtualStickVM : DJIViewModel() {
+ 
+     private fun tryUpdateVirtualStickByRc() {
+         stickValue.postValue(stickValue.value)
++        checkRcOverride()
++        if (latched) return
+         if (useRcStick.value == true) {
+             stickValue.value?.apply {
+                 setLeftPosition(leftHorizontal, leftVertical)
+@@ -130,6 +247,13 @@ class VirtualStickVM : DJIViewModel() {
+         VirtualStickManager.getInstance().clearAllVirtualStickStateListener()
+     }
+ 
++    companion object {
++        private const val TAG = "RcOverride"
++
++        /** RC stick range is +/-660; ignore centre noise below ~10%. */
++        private const val RC_DEADBAND = 66
++    }
++
+     data class VirtualStickStateInfo(
+         var state: VirtualStickState = VirtualStickState(false, FlightControlAuthority.UNKNOWN, false),
+         var reason: FlightControlAuthorityChangeReason = FlightControlAuthorityChangeReason.UNKNOWN
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/pages/VirtualStickFragment.kt b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/pages/VirtualStickFragment.kt
+index 55cd335..0e21f06 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/pages/VirtualStickFragment.kt
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/java/dji/sampleV5/aircraft/pages/VirtualStickFragment.kt
+@@ -68,6 +68,9 @@ class VirtualStickFragment : DJIFragment() {
+         virtualStickVM.virtualStickAdvancedParam.observe(viewLifecycleOwner) {
+             updateVirtualStickInfo()
+         }
++        virtualStickVM.rcOverrideLatched.observe(viewLifecycleOwner) {
++            updateVirtualStickInfo()
++        }
+         simulatorVM.simulatorStateSb.observe(viewLifecycleOwner) {
+             binding?.simulatorStateInfoTv?.text = it
+         }
+@@ -96,6 +99,9 @@ class VirtualStickFragment : DJIFragment() {
+                 }
+             })
+         }
++        binding?.btnRearmVirtualStick?.setOnClickListener {
++            virtualStickVM.rearm()
++        }
+         binding?.btnSetVirtualStickSpeedLevel?.setOnClickListener {
+             val speedLevels = doubleArrayOf(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0)
+             initPopupNumberPicker(Helper.makeList(speedLevels)) {
+@@ -207,6 +213,13 @@ class VirtualStickFragment : DJIFragment() {
+ 
+     private fun updateVirtualStickInfo() {
+         val builder = StringBuilder()
++        if (virtualStickVM.rcOverrideLatched.value == true) {
++            builder.append("*** RC OVERRIDE LATCHED: app control locked (")
++                .append(virtualStickVM.rcOverrideReason.value)
++                .append("). Centre sticks, tap Re-arm. ***\n")
++        } else {
++            builder.append("RC override: armed (moving an RC stick takes control back)\n")
++        }
+         builder.append("Speed level:").append(virtualStickVM.currentSpeedLevel.value)
+         builder.append("\n")
+         builder.append("Use rc stick as virtual stick:").append(virtualStickVM.useRcStick.value)
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/activity_main.xml b/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/activity_main.xml
+index 588f00f..5b89afe 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/activity_main.xml
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/activity_main.xml
+@@ -194,6 +194,22 @@
+                     android:padding="8dp"
+                     android:text="@string/testing_tools"
+                     android:textColor="@color/selector_enable_button" />
++
++                <Button
++                    android:id="@+id/flight_lab_button"
++                    android:layout_width="match_parent"
++                    android:layout_height="wrap_content"
++                    android:elevation="10dp"
++                    android:foreground="?selectableItemBackground"
++                    android:layout_marginLeft="8dp"
++                    android:layout_marginTop="8dp"
++                    android:layout_marginRight="8dp"
++                    android:background="@color/white"
++                    android:enabled="true"
++                    android:gravity="center"
++                    android:padding="8dp"
++                    android:text="FLIGHT LAB"
++                    android:textColor="@color/selector_enable_button" />
+             </LinearLayout>
+         </ScrollView>
+ 
+diff --git a/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/frag_virtual_stick_page.xml b/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/frag_virtual_stick_page.xml
+index 7596793..69ad5ab 100644
+--- a/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/frag_virtual_stick_page.xml
++++ b/SampleCode-V5/android-sdk-v5-sample/src/main/res/layout/frag_virtual_stick_page.xml
+@@ -40,13 +40,21 @@
+                 app:layout_constraintStart_toStartOf="parent"
+                 app:layout_constraintTop_toBottomOf="@id/btn_enable_virtual_stick" />
+ 
++            <Button
++                android:id="@+id/btn_rearm_virtual_stick"
++                style="@style/main_fragment_btn"
++                android:text="Re-arm (RC override)"
++                app:layout_constraintEnd_toEndOf="parent"
++                app:layout_constraintStart_toStartOf="parent"
++                app:layout_constraintTop_toBottomOf="@id/btn_disable_virtual_stick" />
++
+             <Button
+                 android:id="@+id/btn_set_virtual_stick_speed_level"
+                 style="@style/main_fragment_btn"
+                 android:text="@string/btn_set_virtual_stick_speed_level"
+                 app:layout_constraintEnd_toEndOf="parent"
+                 app:layout_constraintStart_toStartOf="parent"
+-                app:layout_constraintTop_toBottomOf="@id/btn_disable_virtual_stick" />
++                app:layout_constraintTop_toBottomOf="@id/btn_rearm_virtual_stick" />
+ 
+             <Button
+                 android:id="@+id/btn_take_off"

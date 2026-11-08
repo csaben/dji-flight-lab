@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Plain HTTP only over the tailnet (WireGuard-encrypted): cradle's capture upload server and the
+     Mac's fast update mirror. Everything else stays HTTPS-only. -->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">cradle.tailb1b51d.ts.net</domain>
+        <domain includeSubdomains="false">100.80.98.4</domain>
+        <domain includeSubdomains="false">100.114.10.83</domain>
+    </domain-config>
+</network-security-config>
