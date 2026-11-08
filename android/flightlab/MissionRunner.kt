@@ -187,7 +187,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         if (!homeOffsetM.isNaN() && homeOffsetM > HOME_WARN_M) onMessage("Warning: you're ${"%.0f".format(homeOffsetM)} m from the planned A. The route is flown relative to here.")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off…")
-            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> setState(State.ABORTED, "Takeoff failed: $e") })
+            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> setState(State.ABORTED, "Takeoff failed: $e. The drone refused the app's takeoff (often DJI's no-fly-zone lock near airports). Take off with the RC, then tap again: the app takes over in the air.") })
         }
     }
 
@@ -519,7 +519,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         ctl.event("follow_start dist=$followDist height=$followHeight")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off to follow you…")
-            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> following = false; setState(State.ABORTED, "Takeoff failed: $e") })
+            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> following = false; setState(State.ABORTED, "Takeoff failed: $e. The drone refused the app's takeoff (often DJI's no-fly-zone lock near airports). Take off with the RC, then tap again: the app takes over in the air.") })
         }
     }
 

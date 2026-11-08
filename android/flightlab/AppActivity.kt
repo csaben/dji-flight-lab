@@ -9,6 +9,9 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.http.SslError
 import android.os.Build
+import dji.sdk.keyvalue.key.FlightControllerKey
+import dji.v5.et.create
+import dji.v5.et.get
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -320,6 +323,7 @@ class AppActivity : Activity() {
                 .put("latched", c.latched).put("latch_reason", c.latchReason).put("vs", c.vsEnabled)
                 .put("capturing", c.capturing).put("upload", c.uploadStatus).put("video_packets", c.videoPackets)
                 .put("video_view", video.visibility == View.VISIBLE)
+                .put("home", try { FlightControllerKey.KeyHomeLocation.create().get()?.let { h -> JSONObject().put("lat", h.latitude).put("lon", h.longitude) } ?: JSONObject.NULL } catch (_: Throwable) { JSONObject.NULL })
                 .put("follow", JSONObject().put("on", r.following).put("info", r.followInfo)
                     .put("phone_acc", n(PhoneGps.acc)).put("phone_age_s", n(PhoneGps.ageS().coerceAtMost(9999.0))))
                 .put("pilot", JSONObject().put("mode", p.mode.name.lowercase()).put("status", p.status).put("want", p.want).put("rtt_ms", n(p.rttMs)))

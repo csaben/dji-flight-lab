@@ -1573,11 +1573,17 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   }
   // A race on the real drone: from where the drone sits, straight through each gate along its heading
   // (2.5 m lead-in and run-out at the gate's height), then land after the last gate.
+  // Real missions are flown relative to the takeoff spot: where the drone sits, or its home point once it's
+  // up (took off with the RC). The flight from there to the first point is a straight line.
+  function takeoffSpot(d) {
+    if (d.flying && d.home && isFinite(d.home.lat)) return llToScene(d.home.lat, d.home.lon);
+    return llToScene(d.lat, d.lon);
+  }
   async function realRaceMission(d) {
     const R = S.realRace;
     if (!hasGeo() || !S.calib) throw new Error("This scene has no GPS alignment.");
     if (!(d.sats >= 6) || !isFinite(d.lat)) throw new Error("Waiting for the drone's GPS fix.");
-    const [ax, ay] = llToScene(d.lat, d.lon), lift = z => Math.max(2.5, +z.toFixed(1));
+    const [ax, ay] = takeoffSpot(d), lift = z => Math.max(2.5, +z.toFixed(1));
     const pts = [{ x: +ax.toFixed(2), y: +ay.toFixed(2), alt: lift(R.gates[0].z) }];
     let low = 0;
     for (const g of R.gates) {
@@ -1602,7 +1608,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     const cap = +$('aiCap').value, lift = z => Math.max(2.5, +z.toFixed(1));
     const vAt = i => { const a = tr[Math.max(0, i - 1)], b = tr[Math.min(tr.length - 1, i + 1)]; return b[0] > a[0] ? Math.hypot(b[1] - a[1], b[2] - a[2], b[3] - a[3]) / (b[0] - a[0]) : 0; };
     const vmax = Math.max(...tr.map((_, i) => vAt(i))), scale = Math.min(1, cap / vmax);
-    const [ax, ay] = llToScene(d.lat, d.lon);
+    const [ax, ay] = takeoffSpot(d);
     const pts = [{ x: +ax.toFixed(2), y: +ay.toFixed(2), alt: lift(tr[0][3]) }], speeds = [Math.min(cap, 3)];
     let last = null;
     tr.forEach((q, i) => {
@@ -1630,7 +1636,6 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     const d = S.ds || {};
     if (!d.connected) return toast('No drone connected.');
     if (!S.realRace && !d.flying && S.syncADrone && !S.syncADrone(true)) return toast("A = drone is on but the drone's position isn't usable yet.");
-    if (S.realRace && d.flying) return toast('Land first: a race starts from the ground where the drone is.');
     toast(S.realRace ? `Building the race ${S.realRace.name}` : 'Building the real flight');
     if (aiLine && !S.realRace?.ghost) return toast('This race has no AI lap yet: train the AI on it in the sandbox first.');
     let res; try { res = aiLine ? await realAiMission(d) : S.realRace ? await realRaceMission(d) : await sendMission(); } catch (e) { return toast(e.message); }
