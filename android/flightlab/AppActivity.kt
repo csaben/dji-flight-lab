@@ -133,6 +133,10 @@ class AppActivity : Activity() {
             if (!reg) { ui.postDelayed(this, 500); return }
             val was = Lab.isReady
             Lab.init(this@AppActivity)
+            Lab.onConnection = { up ->
+                js("window.flMessage&&flMessage(${JSONObject.quote(if (up) "Drone connected" else "Drone connection lost")})")
+                if (!up) { val now = SystemClock.elapsedRealtime(); if (now - lastAutoDiag > 60_000) { lastAutoDiag = now; ui.postDelayed({ sendDiagnostics("auto: drone connection lost") }, 2000) } }
+            }
             if (!was && isStarted) Lab.screenStarted()   // count this screen if it's visible now (onStart skipped it)
             pendingAi?.let { applyAi(it) }
             attachVideo()

@@ -18,6 +18,15 @@ object Lab {
     lateinit var runner: MissionRunner; private set
     lateinit var pilot: PilotLink; private set
     @Volatile var droneConnected = false; private set
+    @Volatile private var listened: Boolean? = null
+    /** Connection changes, e.g. so the screen can report a drop. */
+    var onConnection: (Boolean) -> Unit = {}
+    private fun setConnected(v: Boolean) {
+        if (v == droneConnected) return
+        droneConnected = v
+        ctl.event("drone_connection $v")
+        main.post { onConnection(v) }
+    }
 
     /** Toast-style messages from the controller/runner go to whichever screen is in front. */
     var onMessage: (String) -> Unit = {}
@@ -45,11 +54,13 @@ object Lab {
         }
         ctl.start()
         PhoneGps.start(app)
-        FlightControllerKey.KeyConnection.create().listen(this) { droneConnected = it == true }
-        // listen() only reports changes; poll too so a drone that was connected before we started counts.
+        // The listener is the source of truth. The 1 s poll only fills in a drone that was already connected
+        // before we started (listen() reports changes only); a null/blank get() must never count as "dropped".
+        FlightControllerKey.KeyConnection.create().listen(this) { v -> if (v != null) { listened = v; setConnected(v) } }
         main.post(object : Runnable {
             override fun run() {
-                droneConnected = try { FlightControllerKey.KeyConnection.create().get() == true } catch (_: Throwable) { droneConnected }
+                val g = try { FlightControllerKey.KeyConnection.create().get() } catch (_: Throwable) { null }
+                if (g == true && listened != false) setConnected(true)
                 main.postDelayed(this, 1000)
             }
         })
