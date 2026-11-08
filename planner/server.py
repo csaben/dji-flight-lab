@@ -46,7 +46,8 @@ OVERPASS = [
 ]
 NAME_RE = re.compile(r"[^A-Za-z0-9._-]")
 SIM_UPSTREAM = "http://127.0.0.1:8967"  # dji-rl `djirl serve`
-TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css"}
+TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css",
+         ".png": "image/png", ".webmanifest": "application/manifest+json"}
 
 
 def fetch_buildings(s, w, n, e):
@@ -392,7 +393,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(410, {"error": "this page is out of date; reload it"})
         if p == "/sim" or p.startswith("/sim/"):
             return self._proxy("GET")
-        if p == "/" or p.endswith((".html", ".js", ".css")):
+        if p == "/" or p.endswith((".html", ".js", ".css", ".png", ".webmanifest")):
             f = STATIC / ("index.html" if p == "/" else Path(p).name)
             if not f.exists():
                 return self._send(404, {"error": "not found"})
