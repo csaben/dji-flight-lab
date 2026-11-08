@@ -12,6 +12,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -122,6 +123,7 @@ class AppActivity : Activity() {
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOC)
         ui.postDelayed({ checkForUpdate(manual = false) }, 2500)
         ui.post(waitForSdk)
+        ui.postDelayed(videoWatch, 3000)
     }
 
     /** The drone side starts once the DJI SDK has registered (it initialises in the Application). */
@@ -147,11 +149,23 @@ class AppActivity : Activity() {
             streams.putCameraStreamSurface(ComponentIndexType.LEFT_OR_MAIN, h.surface, w, hgt, ICameraStreamManager.ScaleType.CENTER_CROP)
         } catch (t: Throwable) { android.util.Log.w("FlightLab", "video attach failed", t) }
     }
+    /** Re-bind the video surface if it's showing but no stream packets arrive (black screen in Real drone mode). */
+    private var lastPkts = -1L; private var stalls = 0
+    private val videoWatch = object : Runnable {
+        override fun run() {
+            if (video.visibility == View.VISIBLE && Lab.isReady) {
+                val pk = Lab.ctl.videoPackets
+                if (pk == lastPkts) { if (++stalls >= 2) { stalls = 0; attachVideo() } } else stalls = 0
+                lastPkts = pk
+            }
+            ui.postDelayed(this, 3000)
+        }
+    }
     private var pendingAi: String? = null
     private fun applyAi(m: String) { Lab.pilot.mode = when (m) { "off" -> PilotLink.Mode.OFF; "policy" -> PilotLink.Mode.POLICY; else -> PilotLink.Mode.SHADOW } }
 
     private var isStarted = false
-    override fun onStart() { super.onStart(); isStarted = true; if (Lab.isReady) Lab.screenStarted(); Lab.onMessage = { m -> toast(m); js("window.flMessage&&flMessage(${JSONObject.quote(m)})") } }
+    override fun onStart() { super.onStart(); isStarted = true; if (Lab.isReady) Lab.screenStarted(); Lab.onMessage = { m -> toast(m); js("window.flMessage&&flMessage(${JSONObject.quote(m)})"); autoDiagnostics(m) } }
     override fun onStop() { super.onStop(); isStarted = false; if (Lab.isReady) Lab.screenStopped() }
     override fun onResume() { super.onResume(); immersive(); web.onResume(); js("window.flResume&&flResume()") }
     override fun onPause() { web.onPause(); super.onPause() }
@@ -208,10 +222,26 @@ class AppActivity : Activity() {
     }
 
     // ---- diagnostics: this app's logcat + state to cradle (planner/applogs), so problems can be read without adb
+    /** Any failure the drone side reports goes to cradle on its own (at most once a minute), so nobody has to screenshot it. */
+    private var lastAutoDiag = 0L
+    private val FAILURE = Regex("(?i)(failed|can't|couldn't|aborted|error|timed out|refus|not safe|lost the)")
+    private fun autoDiagnostics(m: String) {
+        if (!FAILURE.containsMatchIn(m) || m.startsWith("Diagnostics")) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastAutoDiag < 60_000) return
+        lastAutoDiag = now
+        ui.postDelayed({ sendDiagnostics("auto: $m") }, 1500)   // let the failure land in the log first
+    }
+
     private fun sendDiagnostics(why: String) = Thread {
         try {
             val log = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-t", "1500", "--pid=${android.os.Process.myPid()}")).inputStream.bufferedReader().readText()
-            val body = "why: $why\nversion: ${updater.localName} (${updater.localCode})\nandroid: ${Build.VERSION.SDK_INT} ${Build.MODEL}\nstatus: ${Bridge().status()}\n\n$log"
+            // The newest flight event log (mission/follow states, takeoff results, SDK errors) is the most useful part.
+            val events = try {
+                java.io.File(getExternalFilesDir(null), "flightlab").listFiles { f -> f.name.endsWith(".events.csv") }
+                    ?.maxByOrNull { it.lastModified() }?.let { f -> "events (${f.name}):\n" + f.readLines().takeLast(150).joinToString("\n") } ?: "no event log"
+            } catch (t: Throwable) { "event log unreadable: $t" }
+            val body = "why: $why\nversion: ${updater.localName} (${updater.localCode})\nandroid: ${Build.VERSION.SDK_INT} ${Build.MODEL}\nstatus: ${Bridge().status()}\n\n$events\n\nlogcat:\n$log"
             val c = (java.net.URL("https://$HOST:8444/api/applog").openConnection() as java.net.HttpURLConnection).apply {
                 requestMethod = "POST"; doOutput = true; connectTimeout = 8000; readTimeout = 15000; setRequestProperty("Content-Type", "text/plain; charset=utf-8")
             }
@@ -284,7 +314,8 @@ class AppActivity : Activity() {
                 .put("mission", r.mission?.name ?: JSONObject.NULL).put("remaining_m", n(if (r.mission != null) r.remainingM() else Double.NaN))
                 .put("point", r.ctlLabel()).put("poi", r.activePoi).put("landing_confirm", r.landingNeedsConfirm)
                 .put("latched", c.latched).put("latch_reason", c.latchReason).put("vs", c.vsEnabled)
-                .put("capturing", c.capturing).put("upload", c.uploadStatus)
+                .put("capturing", c.capturing).put("upload", c.uploadStatus).put("video_packets", c.videoPackets)
+                .put("video_view", video.visibility == View.VISIBLE)
                 .put("follow", JSONObject().put("on", r.following).put("info", r.followInfo)
                     .put("phone_acc", n(PhoneGps.acc)).put("phone_age_s", n(PhoneGps.ageS().coerceAtMost(9999.0))))
                 .put("pilot", JSONObject().put("mode", p.mode.name.lowercase()).put("status", p.status).put("want", p.want).put("rtt_ms", n(p.rttMs)))

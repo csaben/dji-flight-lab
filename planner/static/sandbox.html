@@ -1538,6 +1538,9 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     let [text, color] = !d.registered ? [sdkWhy(d), 'var(--warn)'] : !d.connected ? ['No drone · connect the RC and power on', 'var(--t3)'] : REAL_TXT[st] || [st, 'var(--t2)'];
     if (st === 'HOLD' && d.hold) text = `Holding · ${d.hold}`;
     if (st === 'FOLLOW' && d.follow?.info) text = d.follow.info;
+    // Black screen? Say whether the drone's video stream is arriving at all.
+    if (d.video_packets != null) { if (d.video_packets !== S.vpk) { S.vpk = d.video_packets; S.vpkT = Date.now(); } }
+    if (d.connected && d.registered && S.vpkT != null && Date.now() - S.vpkT > 5000 && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st)) [text, color] = ['No video from the drone yet · check the RC link, or close DJI Fly', 'var(--warn)'];
     $('followBtn').classList.toggle('on', st === 'FOLLOW' || !!d.follow?.on); $('followBtn').textContent = (st === 'FOLLOW' || d.follow?.on) ? 'Stop follow' : 'Follow';
     if (S.realRace && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && d.connected && d.registered) text = `Real race · ${S.realRace.name} · ${S.realRace.gates.length} gates`;
     if (d.latched && !['MANUAL'].includes(st)) [text, color] = [`RC override · ${d.latch_reason || 'sticks moved'}`, 'var(--bad)'];

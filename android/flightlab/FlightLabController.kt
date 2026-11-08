@@ -538,22 +538,7 @@ class FlightLabController(private val context: Context) {
             for ((i, f) in files.withIndex()) {
                 val source = if (f.name.contains(".stream.")) "drone" else "telemetry"
                 try {
-                    val url = URL("$UPLOAD_BASE/upload?date=$date&source=$source&name=${URLEncoder.encode(f.name, "UTF-8")}")
-                    val c = (url.openConnection() as HttpURLConnection).apply {
-                        requestMethod = "PUT"; doOutput = true; setFixedLengthStreamingMode(f.length())
-                        connectTimeout = 15000; readTimeout = 120000
-                    }
-                    f.inputStream().use { inp ->
-                        c.outputStream.use { out ->
-                            val buf = ByteArray(1 shl 16); var sent = 0L; var r: Int
-                            while (inp.read(buf).also { r = it } > 0) {
-                                out.write(buf, 0, r); sent += r
-                                uploadStatus = "Uploading ${i + 1}/${files.size} ${f.name}: ${sent * 100 / f.length()}%"
-                            }
-                        }
-                    }
-                    val code = c.responseCode
-                    if (code == 200) ok++ else event("upload ${f.name} HTTP $code ${c.errorStream?.bufferedReader()?.readText()}")
+                    if (uploadResumable(f, date, source) { sent -> uploadStatus = "Uploading ${i + 1}/${files.size} ${f.name}: ${if (f.length() > 0) sent * 100 / f.length() else 100}%" }) ok++
                 } catch (t: Throwable) { event("upload ${f.name} FAILED $t") }
             }
             uploadStatus = "Uploaded $ok/${files.size} files to cradle data/raw/$date/"
@@ -561,6 +546,67 @@ class FlightLabController(private val context: Context) {
             done(ok)
         }, "flightlab-upload").start()
     }
+
+    /**
+     * Resumable upload in 32 MB parts (dji-upload: &offset=&total=; 409/500 carry {"have": N} = where to
+     * resume). Works on the tailnet and through the Cloudflare gateway (100 MB request cap). A dropped part
+     * is retried up to 6 times with backoff, continuing from what the server already has.
+     */
+    private fun uploadResumable(f: File, date: String, source: String, progress: (Long) -> Unit): Boolean {
+        val total = f.length()
+        val base = "$UPLOAD_BASE/upload?date=$date&source=$source&name=${URLEncoder.encode(f.name, "UTF-8")}&total=$total"
+        var offset = 0L
+        var fails = 0
+        java.io.RandomAccessFile(f, "r").use { raf ->
+            while (true) {
+                val len: Long = minOf(UPLOAD_PART, total - offset)
+                val c = URL("$base&offset=$offset").openConnection() as HttpURLConnection
+                c.requestMethod = "PUT"; c.doOutput = true; c.setFixedLengthStreamingMode(len)
+                c.connectTimeout = 15000; c.readTimeout = 180000
+                var code = -1
+                var body = ""
+                try {
+                    raf.seek(offset)
+                    c.outputStream.use { out ->
+                        val buf = ByteArray(1 shl 16)
+                        var left = len
+                        while (left > 0) {
+                            val r = raf.read(buf, 0, minOf(buf.size.toLong(), left).toInt())
+                            if (r <= 0) break
+                            out.write(buf, 0, r); left -= r; progress(offset + (len - left))
+                        }
+                    }
+                    code = c.responseCode
+                    val st = if (code in 200..299) c.inputStream else c.errorStream
+                    body = st?.bufferedReader()?.readText() ?: ""
+                } catch (t: Throwable) {
+                    event("upload ${f.name} part @$offset: $t")
+                } finally { c.disconnect() }
+                val j: org.json.JSONObject? = try { org.json.JSONObject(body) } catch (_: Throwable) { null }
+                if (code == 200 && j != null && j.optBoolean("done")) { event("upload ${f.name} done ${j.optString("path")}"); return true }
+                if (code == 200 && j == null && total <= UPLOAD_PART) return true   // older server: whole file in one PUT
+                val have: Long = j?.optLong("have", -1L) ?: -1L
+                if (code == 200 && have >= 0) { offset = have; fails = 0; continue }
+                if (have >= 0) offset = have
+                fails++
+                if (fails > 6) { event("upload ${f.name} gave up at $offset/$total (HTTP $code $body)"); return false }
+                Thread.sleep(1000L * fails * fails)
+                if (code == -1) offset = probeHave(base, total) ?: offset
+            }
+        }
+        @Suppress("UNREACHABLE_CODE") return false
+    }
+
+    /** Where the server is with a partial upload: a 0-byte part at a wrong offset answers 409 {"have": N}. */
+    private fun probeHave(base: String, total: Long): Long? = try {
+        val q = URL("$base&offset=${total + 1}").openConnection() as HttpURLConnection
+        q.requestMethod = "PUT"; q.doOutput = true; q.setFixedLengthStreamingMode(0L); q.connectTimeout = 15000; q.readTimeout = 30000
+        q.outputStream.close()
+        q.responseCode
+        val h = org.json.JSONObject(q.errorStream?.bufferedReader()?.readText() ?: "{}").optLong("have", -1L)
+        q.disconnect()
+        if (h >= 0) h else null
+    } catch (_: Throwable) { null }
 
     // ---- logging -------------------------------------------------------------
     fun startLogging() = synchronized(logLock) {
@@ -631,6 +677,7 @@ class FlightLabController(private val context: Context) {
     companion object {
         const val TAG = "FlightLab"
         const val UPLOAD_BASE = "http://cradle.tailb1b51d.ts.net:8966"
+        const val UPLOAD_PART = 32L * 1024 * 1024
         const val MIN_FREE_START = 2_000_000_000L
         const val MIN_FREE_STOP = 1_000_000_000L
         const val CMD_PERIOD_MS = 40L   // 25 Hz, MSDK's maximum send rate
