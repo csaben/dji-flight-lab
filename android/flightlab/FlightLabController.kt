@@ -19,6 +19,7 @@ import dji.v5.common.error.IDJIError
 import dji.v5.et.create
 import dji.v5.et.action
 import dji.v5.et.listen
+import dji.v5.et.get
 import dji.v5.et.set
 import dji.sdk.keyvalue.key.CameraKey
 import dji.sdk.keyvalue.value.camera.CameraMode
@@ -173,6 +174,8 @@ class FlightLabController(private val context: Context) {
         MediaDataCenter.getInstance().cameraStreamManager.addReceiveStreamListener(ComponentIndexType.LEFT_OR_MAIN, streamListener)
         cmdTask = exec.scheduleAtFixedRate({ safe { commandTick() } }, 0, CMD_PERIOD_MS, TimeUnit.MILLISECONDS)
         logTask = exec.scheduleAtFixedRate({ safe { logTick() } }, 0, LOG_PERIOD_MS, TimeUnit.MILLISECONDS)
+        exec.scheduleAtFixedRate({ safe { storageGuard() } }, 5, 5, TimeUnit.SECONDS)
+        exec.scheduleAtFixedRate({ safe { pollTelemetry() } }, 500, 200, TimeUnit.MILLISECONDS)
     }
 
     /** Leaving the screen hands control back to the RC. */
@@ -194,7 +197,30 @@ class FlightLabController(private val context: Context) {
 
     private fun num(v: Any?): Double = (v as? Number)?.toDouble() ?: Double.NaN
 
+    /**
+     * listen() only fires when a value changes, so a drone sitting still on the ground (altitude 0,
+     * same GPS fix) looks stale to the freshness checks. While the aircraft is connected, re-read the
+     * current values at 5 Hz so "fresh" means "the SDK has a current value", not "it moved".
+     */
+    private fun pollTelemetry() {
+        // Only an explicit "disconnected" stops the poll: KeyConnection.get() can read null even with the drone up.
+        if (linkDown) return
+        FlightControllerKey.KeyAltitude.create().get()?.let { altRel = num(it); altT = now() }
+        FlightControllerKey.KeyAircraftLocation3D.create().get()?.let { l ->
+            val la = num(l.latitude); val lo = num(l.longitude)
+            if (!la.isNaN() && !lo.isNaN() && !(la == 0.0 && lo == 0.0)) { lat = la; lon = lo; altGps = num(l.altitude); locT = now() }
+        }
+        FlightControllerKey.KeyGPSSatelliteCount.create().get()?.let { gpsSats = num(it).let { d -> if (d.isNaN()) -1 else d.toInt() } }
+        BatteryKey.KeyChargeRemainingInPercent.create().get()?.let { battery = num(it).let { d -> if (d.isNaN()) -1 else d.toInt() } }
+    }
+
+    @Volatile private var linkDown = false
+
     private fun listenTelemetry() {
+        FlightControllerKey.KeyConnection.create().listen(this) { c ->
+            linkDown = c == false
+            if (linkDown) { locT = 0L; altT = 0L }
+        }
         FlightControllerKey.KeyAircraftVelocity.create().listen(this) {
             it?.let { v -> velN = num(v.x); velE = num(v.y); velD = num(v.z); velT = now() }
         }
@@ -408,6 +434,7 @@ class FlightLabController(private val context: Context) {
 
     fun startCapture(recordSd: Boolean) {
         if (capturing) return
+        if (logDir().usableSpace < MIN_FREE_START) { onMessage("Not recording: under 2 GB free on the phone. Delete uploaded videos in Videos."); return }
         if (logFile != null) stopLogging()
         startLogging()
         streamBytes = 0
@@ -439,6 +466,73 @@ class FlightLabController(private val context: Context) {
     fun uploadLastSession(date: String) {
         val files = lastSession
         if (files.isEmpty()) return onMessage("Nothing captured yet.")
+        uploadFiles(files, date)
+    }
+
+    // ---- recordings on this phone (the app's Videos tab) ----------------------
+    private val prefs get() = context.getSharedPreferences("flightlab", Context.MODE_PRIVATE)
+    var autoDelete: Boolean
+        get() = prefs.getBoolean("autoDelete", true)
+        set(v) { prefs.edit().putBoolean("autoDelete", v).apply() }
+    private val uploadedFile get() = File(logDir(), ".uploaded")
+    private fun uploadedStamps(): Set<String> = try { uploadedFile.readLines().toSet() } catch (_: Throwable) { emptySet() }
+    @Volatile private var uploadingStamp: String? = null
+
+    private fun stampOf(f: File) = Regex("flightlab_(\\d{8}_\\d{6})").find(f.name)?.groupValues?.get(1)
+
+    /** Sessions in the app's folder, newest first. Video = the raw drone stream (the big file). */
+    fun recordings(): org.json.JSONArray {
+        val up = uploadedStamps()
+        val bySession = (logDir().listFiles() ?: emptyArray()).filter { it.isFile && stampOf(it) != null }.groupBy { stampOf(it)!! }
+        val out = org.json.JSONArray()
+        for ((stamp, files) in bySession.toSortedMap(compareByDescending { it })) {
+            val video = files.firstOrNull { it.name.contains(".stream.") }
+            out.put(org.json.JSONObject().put("stamp", stamp).put("bytes", files.sumOf { it.length() })
+                .put("video_bytes", video?.length() ?: 0).put("files", files.size)
+                .put("uploaded", stamp in up).put("uploading", stamp == uploadingStamp)
+                .put("recording", capturing && stamp == logStamp))
+        }
+        return out
+    }
+
+    fun deleteRecording(stamp: String): String {
+        if (capturing && stamp == logStamp) return "That recording is still running."
+        if (stamp == uploadingStamp) return "That recording is uploading."
+        (logDir().listFiles() ?: emptyArray()).filter { stampOf(it) == stamp }.forEach { it.delete() }
+        return ""
+    }
+
+    fun uploadRecording(stamp: String): String {
+        if (capturing && stamp == logStamp) return "Stop recording first."
+        if (uploadingStamp != null) return "Another upload is running."
+        val files = (logDir().listFiles() ?: emptyArray()).filter { stampOf(it) == stamp && it.length() > 0 }
+        if (files.isEmpty()) return "Nothing to upload."
+        val date = "${stamp.substring(0, 4)}-${stamp.substring(4, 6)}-${stamp.substring(6, 8)}"
+        uploadingStamp = stamp
+        uploadFiles(files, date) { ok ->
+            uploadingStamp = null
+            if (ok == files.size) {
+                try { uploadedFile.appendText("$stamp\n") } catch (_: Throwable) {}
+                if (autoDelete) files.filter { it.name.contains(".stream.") }.forEach { it.delete() }   // the big part; logs stay (tiny)
+            }
+        }
+        return ""
+    }
+
+    fun storage(): org.json.JSONObject {
+        val d = logDir()
+        return org.json.JSONObject().put("free", d.usableSpace).put("total", d.totalSpace)
+            .put("used", (d.listFiles() ?: emptyArray()).sumOf { it.length() }).put("auto_delete", autoDelete)
+    }
+
+    /** Never fill the phone: refuse to start below 2 GB free, stop recording below 1 GB. */
+    private fun storageGuard() {
+        if (capturing && logDir().usableSpace < MIN_FREE_STOP) {
+            stopCapture(); onMessage("Recording stopped: the phone is almost full. Upload and delete old videos in Videos.")
+        }
+    }
+
+    private fun uploadFiles(files: List<File>, date: String, done: (Int) -> Unit = {}) {
         Thread({
             var ok = 0
             for ((i, f) in files.withIndex()) {
@@ -464,6 +558,7 @@ class FlightLabController(private val context: Context) {
             }
             uploadStatus = "Uploaded $ok/${files.size} files to cradle data/raw/$date/"
             onMessage(uploadStatus)
+            done(ok)
         }, "flightlab-upload").start()
     }
 
@@ -536,6 +631,8 @@ class FlightLabController(private val context: Context) {
     companion object {
         const val TAG = "FlightLab"
         const val UPLOAD_BASE = "http://cradle.tailb1b51d.ts.net:8966"
+        const val MIN_FREE_START = 2_000_000_000L
+        const val MIN_FREE_STOP = 1_000_000_000L
         const val CMD_PERIOD_MS = 40L   // 25 Hz, MSDK's maximum send rate
         const val LOG_PERIOD_MS = 20L   // 50 Hz
         const val RC_DEADBAND = 66      // RC stick range is +/-660

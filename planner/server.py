@@ -29,6 +29,9 @@ from urllib.parse import parse_qs, urlparse
 HERE = Path(__file__).resolve().parent
 STATIC = HERE / "static"
 APPLOGS = HERE / "applogs"   # diagnostics posted by the Flight Lab app
+from videos import Videos  # noqa: E402
+VIDEOS = None   # set in main (needs the sim upstream)
+PHONE = HERE / "phone"    # scenes exported for the on-phone sandbox (tools/export_phone_scene.py)
 DL = HERE / "dl"          # Flight Lab APK + version.json (published by tools/publish_apk.sh)
 MISSIONS = HERE / "missions"
 CACHE = HERE / "cache"
@@ -175,6 +178,88 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _file(self, f: Path, ctype: str):
+        """Serve a file with HTTP Range support (video seeking)."""
+        size = f.stat().st_size
+        start, end = 0, size - 1
+        rng = self.headers.get("Range", "")
+        m = re.match(r"bytes=(\d*)-(\d*)", rng)
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1)); end = int(m.group(2)) if m.group(2) else size - 1
+            else:
+                start = max(0, size - int(m.group(2)))
+            end = min(end, size - 1)
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.end_headers()
+        with f.open("rb") as fh:
+            fh.seek(start)
+            left = end - start + 1
+            while left > 0 and (chunk := fh.read(min(1 << 20, left))):
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
+    def _videos(self, method, p):
+        parts = p.split("/")[3:]   # /api/videos[/<id>[/<what>]]
+        if not parts or not parts[0]:
+            return self._send(200, VIDEOS.list()) if method == "GET" else self._send(405, {"error": "method"})
+        if parts[0] == "jobs":
+            return self._send(200, VIDEOS.jobs())
+        vid = parts[0]
+        if not re.fullmatch(r"[0-9a-f]{12}", vid):
+            return self._send(404, {"error": "not found"})
+        what = parts[1] if len(parts) > 1 else ""
+        if method == "GET" and what == "play.mp4":
+            f = VIDEOS.preview(vid)
+            return self._file(f, "video/mp4") if f else self._send(202, {"preparing": True})
+        if method == "GET" and what == "thumb.jpg":
+            f = VIDEOS.thumb(vid)
+            return self._file(f, "image/jpeg") if f else self._send(202, {"preparing": True})
+        if method == "POST":
+            try:
+                n = int(self.headers.get("Content-Length", "0"))
+                assert n < 100_000
+                j = json.loads(self.rfile.read(n) or b"{}")
+                assert isinstance(j, dict)
+            except Exception:
+                return self._send(400, {"error": "bad JSON"})
+            if what == "splat":
+                name = re.sub(r"-+", "-", re.sub(r"[^a-z0-9-]", "-", str(j.get("name", "")).strip().lower())).strip("-")[:48]
+                if len(name) < 2:
+                    return self._send(400, {"error": "name the splat (2-48 letters, digits or dashes)"})
+                method_ = j.get("method") if j.get("method") in ("worldlabs", "local") else "local"
+                try:
+                    return self._send(200, VIDEOS.request_splat(vid, name, method_))
+                except KeyError:
+                    return self._send(404, {"error": "no such video"})
+            return self._send(200, VIDEOS.update(vid, j))
+        return self._send(404, {"error": "not found"})
+
+    def _phone(self, p):
+        """/phone/<scene>/{meta.json,scene.splat,esdf.bin}. Big files are versioned (?v=), so cache them hard."""
+        parts = p.split("/")
+        if len(parts) != 4 or parts[3] not in ("meta.json", "scene.splat", "esdf.bin") or not re.fullmatch(r"[\w.-]+", parts[2]):
+            return self._send(404, {"error": "not found"})
+        f = PHONE / parts[2] / parts[3]
+        if not f.exists():
+            return self._send(404, {"error": "scene not exported for the phone"})
+        size = f.stat().st_size
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json" if f.suffix == ".json" else "application/octet-stream")
+        self.send_header("Content-Length", str(size))
+        self.send_header("Cache-Control", "public, max-age=31536000, immutable" if "v=" in self.path and f.suffix != ".json" else "no-store")
+        self.end_headers()
+        with f.open("rb") as fh:
+            while chunk := fh.read(1 << 20):
+                self.wfile.write(chunk)
+
     def _proxy(self, method):
         """Forward /sim/* to the dji-rl sim server (plain HTTP on localhost) so the HTTPS page can use it."""
         target = SIM_UPSTREAM + self.path[len("/sim"):] or "/"
@@ -294,8 +379,17 @@ class H(BaseHTTPRequestHandler):
                 return self._send(200, airspace(lat, lon))
             except Exception as e:
                 return self._send(502, {"error": f"FAA lookup failed: {e}"})
+        if p.startswith("/phone/"):
+            return self._phone(p)
+        if p == "/api/videos" or p.startswith("/api/videos/"):
+            return self._videos("GET", p)
         if p == "/dl" or p.startswith("/dl/"):
             return self._dl(p)
+        if p == "/sim/frame" and "sid=" not in self.path and "f=0&" not in self.path:
+            # A stale pre-session page left open in a browser streams frames nonstop and hogs the one GPU
+            # renderer, starving the phone. Slow it right down instead of rendering for it.
+            time.sleep(2)
+            return self._send(410, {"error": "this page is out of date; reload it"})
         if p == "/sim" or p.startswith("/sim/"):
             return self._proxy("GET")
         if p == "/" or p.endswith((".html", ".js", ".css")):
@@ -344,6 +438,8 @@ class H(BaseHTTPRequestHandler):
             return self._send(200, {"ok": True, "saved": f.name})
         if urlparse(self.path).path.startswith("/api/lib/"):
             return self._lib("POST")
+        if urlparse(self.path).path.startswith("/api/videos/"):
+            return self._videos("POST", urlparse(self.path).path)
         if urlparse(self.path).path.startswith("/sim/"):
             return self._proxy("POST")
         if urlparse(self.path).path.startswith("/api/calib/"):
@@ -378,7 +474,8 @@ class H(BaseHTTPRequestHandler):
         self._send(200, {"name": name})
 
     def log_message(self, fmt, *args):
-        print("%s - %s" % (self.address_string(), fmt % args), flush=True)
+        fwd = self.headers.get("X-Forwarded-For", "") if getattr(self, "headers", None) else ""
+        print("%s%s - %s" % (self.address_string(), f" ({fwd})" if fwd else "", fmt % args), flush=True)
 
 
 if __name__ == "__main__":
@@ -387,5 +484,6 @@ if __name__ == "__main__":
     ap.add_argument("--port", type=int, default=8968)
     a = ap.parse_args()
     MISSIONS.mkdir(exist_ok=True)
+    VIDEOS = Videos(HERE / "videos", SIM_UPSTREAM)
     print(f"planner on http://{a.host}:{a.port}", flush=True)
     ThreadingHTTPServer((a.host, a.port), H).serve_forever()

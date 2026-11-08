@@ -67,17 +67,18 @@ class AppActivity : Activity() {
         // SDK state straight from the SDK callbacks (LiveData replays the latest value).
         msdk.lvInitProcess.observeForever { sdkInit = it.first.name }
         msdk.lvRegisterState.observeForever { sdkError = if (it.first) null else (it.second?.toString() ?: "registration failed"); if (!it.first) ui.postDelayed({ sendDiagnostics("register failed") }, 1500) }
-        msdk.lvProductConnectionState.observeForever { productConnected = it.first; productId = it.second }
+        msdk.lvProductConnectionState.observeForever {
+            productConnected = it.first; productId = it.second
+            if (it.first) { ui.postDelayed({ attachVideo() }, 1000); ui.postDelayed({ attachVideo() }, 4000) }   // drone came up after the surface
+        }
 
         val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         video = SurfaceView(this).apply {
             visibility = View.GONE
             holder.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(h: SurfaceHolder) {}
-                override fun surfaceChanged(h: SurfaceHolder, format: Int, w: Int, hgt: Int) {
-                    if (Lab.isReady) try { streams.putCameraStreamSurface(ComponentIndexType.LEFT_OR_MAIN, h.surface, w, hgt, ICameraStreamManager.ScaleType.CENTER_CROP) } catch (_: Throwable) {}
-                }
-                override fun surfaceDestroyed(h: SurfaceHolder) { if (Lab.isReady) try { streams.removeCameraStreamSurface(h.surface) } catch (_: Throwable) {} }
+                override fun surfaceChanged(h: SurfaceHolder, format: Int, w: Int, hgt: Int) { surf = Triple(h, w, hgt); attachVideo() }
+                override fun surfaceDestroyed(h: SurfaceHolder) { surf = null; try { streams.removeCameraStreamSurface(h.surface) } catch (_: Throwable) {} }
             })
         }
         root.addView(video, FrameLayout.LayoutParams(-1, -1))
@@ -132,9 +133,19 @@ class AppActivity : Activity() {
             Lab.init(this@AppActivity)
             if (!was && isStarted) Lab.screenStarted()   // count this screen if it's visible now (onStart skipped it)
             pendingAi?.let { applyAi(it) }
-            if (video.visibility == View.VISIBLE) { video.visibility = View.GONE; video.visibility = View.VISIBLE }   // attach the stream now
+            attachVideo()
             js("window.flMessage&&flMessage('Drone link ready')")
         }
+    }
+    /** (Re)bind the live camera stream to the surface. Safe to call any time; the SDK replaces an existing binding. */
+    private var surf: Triple<SurfaceHolder, Int, Int>? = null
+    private fun attachVideo() {
+        val (h, w, hgt) = surf ?: return
+        if (!h.surface.isValid) return
+        try {
+            streams.removeCameraStreamSurface(h.surface)
+            streams.putCameraStreamSurface(ComponentIndexType.LEFT_OR_MAIN, h.surface, w, hgt, ICameraStreamManager.ScaleType.CENTER_CROP)
+        } catch (t: Throwable) { android.util.Log.w("FlightLab", "video attach failed", t) }
     }
     private var pendingAi: String? = null
     private fun applyAi(m: String) { Lab.pilot.mode = when (m) { "off" -> PilotLink.Mode.OFF; "policy" -> PilotLink.Mode.POLICY; else -> PilotLink.Mode.SHADOW } }
@@ -162,6 +173,7 @@ class AppActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_LOC) pendingGeo?.let { (o, cb) -> cb.invoke(o, grantResults.any { it == PackageManager.PERMISSION_GRANTED }, false); pendingGeo = null }
+        if (requestCode == REQ_LOC && grantResults.any { it == PackageManager.PERMISSION_GRANTED }) PhoneGps.start(this)
     }
 
     private var urlIdx = 0
@@ -273,6 +285,8 @@ class AppActivity : Activity() {
                 .put("point", r.ctlLabel()).put("poi", r.activePoi).put("landing_confirm", r.landingNeedsConfirm)
                 .put("latched", c.latched).put("latch_reason", c.latchReason).put("vs", c.vsEnabled)
                 .put("capturing", c.capturing).put("upload", c.uploadStatus)
+                .put("follow", JSONObject().put("on", r.following).put("info", r.followInfo)
+                    .put("phone_acc", n(PhoneGps.acc)).put("phone_age_s", n(PhoneGps.ageS().coerceAtMost(9999.0))))
                 .put("pilot", JSONObject().put("mode", p.mode.name.lowercase()).put("status", p.status).put("want", p.want).put("rtt_ms", n(p.rttMs)))
                 .toString()
         }
@@ -299,6 +313,16 @@ class AppActivity : Activity() {
         @JavascriptInterface fun checkUpdate(): Unit = main { checkForUpdate(manual = true) }
         @JavascriptInterface fun reload(): Unit = main { loadSandbox(reset = true) }
         @JavascriptInterface fun toast(m: String): Unit = main { this@AppActivity.toast(m) }
+        // ---- Videos tab: recordings stored on this phone
+        @JavascriptInterface fun recordings(): String = if (!Lab.isReady) "[]" else Lab.ctl.recordings().toString()
+        @JavascriptInterface fun storage(): String = if (!Lab.isReady) "{}" else Lab.ctl.storage().toString()
+        @JavascriptInterface fun deleteRecording(stamp: String): String = if (!Lab.isReady) "The app is still starting." else Lab.ctl.deleteRecording(stamp)
+        @JavascriptInterface fun uploadRecording(stamp: String): String = if (!Lab.isReady) "The app is still starting." else Lab.ctl.uploadRecording(stamp)
+        @JavascriptInterface fun setAutoDelete(on: Boolean): Unit { if (Lab.isReady) Lab.ctl.autoDelete = on }
+        @JavascriptInterface fun capture(on: Boolean): Unit = drone { if (on) Lab.ctl.startCapture(recordSd = true) else Lab.ctl.stopCapture() }
+        @JavascriptInterface fun follow(distM: Double, heightM: Double): Unit = drone { Lab.runner.startFollow(distM, heightM) }
+        @JavascriptInterface fun stopFollow(): Unit = drone { Lab.runner.stopFollow() }
+        @JavascriptInterface fun uploadStatus(): String = if (!Lab.isReady) "" else Lab.ctl.uploadStatus
     }
 
     companion object {

@@ -36,7 +36,7 @@ import kotlin.math.sqrt
  */
 class MissionRunner(private val ctl: FlightLabController, private val cacheDir: File) {
 
-    enum class State { IDLE, LOADED, TAKEOFF, ARMING, FLYING, POLICY, PAUSED, HOLD, MANUAL, ARRIVED, LANDING, DONE, ABORTED }
+    enum class State { IDLE, LOADED, TAKEOFF, ARMING, FLYING, POLICY, PAUSED, HOLD, MANUAL, ARRIVED, LANDING, DONE, ABORTED, FOLLOW }
 
     data class P3(val e: Double, val n: Double, val u: Double)
     /** radius = activation range in metres (horizontal); null = always eligible. */
@@ -48,6 +48,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         val corridor: Double, val homeLat: Double, val homeLon: Double, val lowBattery: Int,
         val previewS: Double, val lengthM: Double,
         val routeRel: List<P3>, val handoff: String, val text: String,
+        val speeds: List<Double>? = null,   // per path point, when the mission carries a speed profile
     )
 
     @Volatile var state = State.IDLE; private set
@@ -73,6 +74,9 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     private var lat0 = Double.NaN; private var lon0 = Double.NaN
     private var cmdE = 0.0; private var cmdN = 0.0     // slew-limited horizontal command (ground frame)
     private var lastGimbalPitch = Double.NaN; private var lastGimbalNs = 0L
+    private var gimbalSmooth = Double.NaN        // low-passed, rate-limited gimbal pitch target
+    private var yawRateCmd = 0.0                 // slew-limited yaw rate command
+    private var vLim = DoubleArray(0)            // per-vertex corner speed limit (curvature)
     private var stateNs = 0L
     @Volatile private var rejoinOnArm = false
     private val exec = Executors.newSingleThreadScheduledExecutor { Thread(it, "mission") }
@@ -80,7 +84,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     init {
         exec.scheduleAtFixedRate({ try { supervise() } catch (t: Throwable) { ctl.event("mission supervise error $t") } }, 0, 100, TimeUnit.MILLISECONDS)
         ctl.onAutopilotKilled = { why ->
-            if (state == State.FLYING || state == State.POLICY || state == State.PAUSED || state == State.HOLD) {
+            if (state == State.FLYING || state == State.POLICY || state == State.PAUSED || state == State.HOLD || state == State.FOLLOW) {
                 setState(State.MANUAL, "You have control. Fly around it, centre the sticks, then tap Re-arm & continue.")
             }
         }
@@ -127,7 +131,11 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         require(rr.length() >= 2) { "route_rel needs at least 2 points" }
         val pts = (0 until rr.length()).map { rr.getJSONObject(it).let { o -> P3(o.getDouble("e_m"), o.getDouble("n_m"), o.getDouble("up_m")) } }
         // Drop duplicate consecutive points (the planner can repeat the final vertex).
-        val clean = pts.filterIndexed { i, p -> i == 0 || dist(p, pts[i - 1]) > 0.05 }
+        val keep = pts.indices.filter { i -> i == 0 || dist(pts[i], pts[i - 1]) > 0.05 }
+        val clean = keep.map { pts[it] }
+        // Optional per-point speed (e.g. a trained AI's racing line, already scaled to a safe cap).
+        val sp = j.optJSONArray("speeds_mps")
+        val speeds = if (sp != null && sp.length() == pts.size) keep.map { sp.optDouble(it, Double.NaN).coerceIn(0.3, MAX_SPEED) } else null
         val pr = j.optJSONArray("pois_rel")
         val pois = if (pr == null) emptyList() else (0 until pr.length()).map { pr.getJSONObject(it).let { o -> Poi(P3(o.getDouble("e_m"), o.getDouble("n_m"), o.optDouble("up_m", 1.0)), o.optString("label", "POI ${it + 1}"), o.optDouble("radius_m", Double.NaN).takeIf { r -> !r.isNaN() && r > 0 }) } }
         val lim = j.optJSONObject("limits") ?: JSONObject()
@@ -147,7 +155,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
             lowBattery = (j.optJSONObject("failsafe")?.optInt("on_low_battery_pct", 30) ?: 30).coerceAtLeast(25),
             previewS = sim.optDouble("duration_s", Double.NaN),
             lengthM = clean.zipWithNext { a, b -> dist(a, b) }.sum(),
-            routeRel = pts, handoff = j.optString("obstacle_handoff", "human"), text = text,
+            routeRel = pts, handoff = j.optString("obstacle_handoff", "human"), text = text, speeds = speeds,
         )
     }
 
@@ -168,8 +176,9 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         path = buildList {
             add(P3(0.0, 0.0, here.u)); addAll(m.path)
             if (m.takeoffLand) m.path.last().let { add(P3(it.e, it.n, LAND_APPROACH_ALT)) }
-        }.let { l -> l.filterIndexed { i, p -> i == 0 || dist(p, l[i - 1]) > 0.05 } }
-        seg = 0; progressM = 0.0; cmdE = 0.0; cmdN = 0.0; activePoi = -1; lastGimbalPitch = Double.NaN
+        }.let { l -> l.filterIndexed { i, p -> i == 0 || dist(p, l[i - 1]) > 0.05 } }.let { smoothCorners(it) }
+        vLim = cornerLimits(path, m)
+        seg = 0; progressM = 0.0; cmdE = 0.0; cmdN = 0.0; activePoi = -1; lastGimbalPitch = Double.NaN; gimbalSmooth = Double.NaN; yawRateCmd = 0.0
         if (ctl.logFile == null) ctl.startLogging()
         // Every mission also records the full stream + 50 Hz telemetry (+ SD 4K) for the data flywheel.
         if (!ctl.capturing) ctl.startCapture(recordSd = true)
@@ -197,6 +206,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         if (!ctl.sticksCentered()) return onMessage("Centre the RC sticks first.")
         if (ctl.latched) ctl.rearm()
         if (ctl.latched) return
+        if (following) { followCheck()?.let { return onMessage("Can't follow: $it") }; arm(); return }
         preflight(inFlight = true, checkTrack = false)?.let { return onMessage("Can't continue: $it") }
         rejoinOnArm = true
         arm()
@@ -221,6 +231,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     fun abort(why: String = "abort pressed") {
         if (state in listOf(State.IDLE, State.LOADED, State.DONE, State.ABORTED)) return
         rejoinOnArm = false
+        following = false
         ctl.autopilot = null
         if (state == State.LANDING) FlightControllerKey.KeyStopAutoLanding.create().action({}, {})
         setState(State.ABORTED, "Mission aborted ($why). Hovering; take over with the RC or Disable VS.")
@@ -228,6 +239,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
 
     fun land() {
         if (!ctl.flying) return onMessage("Not flying.")
+        following = false
         ctl.autopilot = null
         setState(State.LANDING, "Landing…")
         if (ctl.vsEnabled) ctl.disableVirtualStick()
@@ -240,6 +252,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
 
     // ---- state machine (10 Hz) -----------------------------------------------------------------
     private fun supervise() {
+        if (following) return superviseFollow()
         val m = mission ?: return
         when (state) {
             State.TAKEOFF -> when {
@@ -276,9 +289,10 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         return when {
             ctl.latched -> "RC override is latched. Centre sticks and Re-arm."
             !ctl.sticksCentered() -> "RC sticks aren't centred."
-            ctl.lat.isNaN() || (n - ctl.locT) > 1_500_000_000L -> "no fresh GPS position"
+            ctl.lat.isNaN() -> "no GPS fix yet (${ctl.gpsSats} satellites). Wait outdoors with a clear sky view."
+            (n - ctl.locT) > 1_500_000_000L -> "no fresh GPS position (last fix ${(n - ctl.locT) / 1_000_000_000L} s ago, ${ctl.gpsSats} satellites)"
             ctl.gpsSats in 0 until MIN_SATS -> "only ${ctl.gpsSats} GPS satellites (need $MIN_SATS)"
-            ctl.altRel.isNaN() || (n - ctl.altT) > 1_500_000_000L -> "no fresh altitude"
+            ctl.altRel.isNaN() || (n - ctl.altT) > 1_500_000_000L -> "no fresh altitude (last ${(n - ctl.altT) / 1_000_000_000L} s ago)"
             ctl.battery in 0 until m.lowBattery -> "battery ${ctl.battery}% is below ${m.lowBattery}%"
             inFlight && ctl.altRel > m.ceiling + 3 -> "above the mission ceiling (${"%.0f".format(ctl.altRel)} m)"
             inFlight && checkTrack && state != State.POLICY && abs(altError) > ALT_TOLERANCE -> "${"%.1f".format(altError)} m off the planned height"
@@ -306,7 +320,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
             val a = path[seg]; val b = path[seg + 1]
             val L = dist(a, b); val s = along(a, b, p)
             val switchAt = if (fpv && seg + 2 < path.size && turnDeg(seg + 1) < 60) FPV_SWITCH_M else ARRIVE_M
-            if (L - s < switchAt && dist(p, b) < switchAt + 1.0) { progressM += L; seg++; ctl.autopilotLabel = "seg $seg"; ctl.event("mission_vertex $seg") } else break
+            if (L - s < switchAt && dist(p, b) < switchAt + 2.0) { progressM += L; seg++; ctl.autopilotLabel = "seg $seg"; ctl.event("mission_vertex $seg") } else break
         }
         if (seg >= path.size - 1) {
             if (state == State.FLYING) setState(State.ARRIVED, if (m.takeoffLand) "Arrived. Landing…" else "Arrived. Hovering at the end point; land with the RC or tap Land.")
@@ -335,14 +349,13 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         val horiz = hypot(b.e - a.e, b.n - a.n)
         val vertical = horiz < 0.5
         val cruise = if (vertical) VERTICAL_SPEED else m.speed
-        val last = seg + 2 >= path.size
-        val cornerV = when {
-            last -> 0.0
-            fpv -> cruise * cos(Math.toRadians(min(turnDeg(seg + 1), 80.0)) / 2).coerceAtLeast(0.4)
-            turnDeg(seg + 1) < 15 -> cruise
-            else -> CORNER_SPEED
+        // Brake early enough for the tightest corner (or the end) within stopping distance.
+        var v = cruise; var ahead = L - s
+        for (k in seg + 1 until path.size) {
+            v = min(v, sqrt(vLim[k] * vLim[k] + 2 * DECEL * ahead))
+            if (ahead > cruise * cruise / (2 * DECEL) + 1 || k + 1 >= path.size) break
+            ahead += dist(path[k], path[k + 1])
         }
-        val v = min(cruise, sqrt(cornerV * cornerV + 2 * DECEL * (L - s)))
         // Velocity = along-track + cross-track correction toward the line.
         var vE = dE * v - K_CROSS * xE
         var vN = dN * v - K_CROSS * xN
@@ -354,10 +367,12 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         val step = ACCEL * dt
         cmdE += (vE - cmdE).coerceIn(-step, step); cmdN += (vN - cmdN).coerceIn(-step, step)
 
-        // Heading: look at the active POI (normal style) or face the direction of travel.
-        val targetYaw = poiYaw(m, p) ?: if (horiz > 1.0) Math.toDegrees(atan2(dE, dN)) else ctl.yaw
-        val err = wrap(targetYaw - ctl.yaw)
-        val yawRate = (K_YAW * err).coerceIn(-MAX_YAW, MAX_YAW)
+        // Heading: look at the active POI (normal style) or at a point a little way ahead on the path,
+        // so vertices don't kick the yaw; the yaw rate itself is slew-limited.
+        val la = aheadPoint(c, LOOKAHEAD_MIN + LOOKAHEAD_S * hypot(cmdE, cmdN))
+        val laH = hypot(la.e - p.e, la.n - p.n)
+        val targetYaw = poiYaw(m, p) ?: if (horiz > 1.0 && laH > 1.0) Math.toDegrees(atan2(la.e - p.e, la.n - p.n)) else if (horiz > 1.0) Math.toDegrees(atan2(dE, dN)) else ctl.yaw
+        val yawRate = smoothYawRate(wrap(targetYaw - ctl.yaw), dt)
         gimbal(m, p)
 
         // Ground frame -> body frame (yaw 0 = north, clockwise positive).
@@ -385,14 +400,196 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
             val q = m.pois[activePoi].p
             Math.toDegrees(atan2(q.u - p.u, hypot(q.e - p.e, q.n - p.n))).coerceIn(-90.0, 20.0)
         } else if (m.style == "fpv") m.fpvGimbal else DEFAULT_GIMBAL
+        sendGimbal(target)
+    }
+
+    /** Glide the gimbal: low-pass + rate-limit the target at 25 Hz, send small absolute moves every 200 ms. */
+    private fun sendGimbal(target: Double) {
+        val dt = FlightLabController.CMD_PERIOD_MS / 1000.0
+        if (gimbalSmooth.isNaN()) gimbalSmooth = ctl.gimbalPitch.takeIf { !it.isNaN() } ?: target
+        val want = gimbalSmooth + (target - gimbalSmooth) * min(1.0, dt / GIMBAL_TAU)
+        gimbalSmooth += (want - gimbalSmooth).coerceIn(-GIMBAL_RATE * dt, GIMBAL_RATE * dt)
         val now = SystemClock.elapsedRealtimeNanos()
-        if (!lastGimbalPitch.isNaN() && (abs(target - lastGimbalPitch) < 2.0 || now - lastGimbalNs < 400_000_000L)) return
-        lastGimbalPitch = target; lastGimbalNs = now
+        if (!lastGimbalPitch.isNaN() && (abs(gimbalSmooth - lastGimbalPitch) < 0.4 || now - lastGimbalNs < 200_000_000L)) return
+        lastGimbalPitch = gimbalSmooth; lastGimbalNs = now
         val r = GimbalAngleRotation().apply {
-            mode = GimbalAngleRotationMode.ABSOLUTE_ANGLE; pitch = target; yaw = 0.0; roll = 0.0
-            pitchIgnored = false; yawIgnored = true; rollIgnored = true; duration = 0.5
+            mode = GimbalAngleRotationMode.ABSOLUTE_ANGLE; pitch = gimbalSmooth; yaw = 0.0; roll = 0.0
+            pitchIgnored = false; yawIgnored = true; rollIgnored = true; duration = 0.25
         }
         GimbalKey.KeyRotateByAngle.create().action(r, {}, { e -> ctl.event("gimbal rotate failed $e") })
+    }
+
+    /** P on heading error, then limit how fast the commanded yaw rate may change (no snap turns). */
+    private fun smoothYawRate(errDeg: Double, dt: Double): Double {
+        val want = if (abs(errDeg) < YAW_DEADBAND) 0.0 else (K_YAW * errDeg).coerceIn(-MAX_YAW, MAX_YAW)
+        yawRateCmd += (want - yawRateCmd).coerceIn(-YAW_ACC * dt, YAW_ACC * dt)
+        return yawRateCmd
+    }
+
+    /** The point `d` metres further along the path from c (c lies on segment `seg`). */
+    private fun aheadPoint(c: P3, d: Double): P3 {
+        var left = d; var from = c; var k = seg + 1
+        while (k < path.size) {
+            val to = path[k]; val L = dist(from, to)
+            if (L >= left) { val f = left / L; return P3(from.e + (to.e - from.e) * f, from.n + (to.n - from.n) * f, from.u + (to.u - from.u) * f) }
+            left -= L; from = to; k++
+        }
+        return path.last()
+    }
+
+    /**
+     * Round horizontal corners: three passes of bounded corner cutting (each cut <= 25% of the leg and
+     * <= 1.5, 0.75, 0.4 m), so the drone sweeps through instead of stopping and pivoting. Climbs and
+     * descents in place (horizontal leg < 0.5 m) and the end points are kept exactly.
+     */
+    private fun smoothCorners(pts: List<P3>): List<P3> {
+        var cur = pts
+        for (cut in doubleArrayOf(1.5, 0.75, 0.4)) {
+            if (cur.size < 3) return cur
+            val out = ArrayList<P3>(cur.size * 2); out += cur.first()
+            for (i in 1 until cur.size - 1) {
+                val a = cur[i - 1]; val b = cur[i]; val c = cur[i + 1]
+                val h1 = hypot(b.e - a.e, b.n - a.n); val h2 = hypot(c.e - b.e, c.n - b.n)
+                if (h1 < 0.5 || h2 < 0.5 || turnAt(a, b, c) < 4.0) { out += b; continue }
+                val f1 = min(0.25, cut / dist(a, b)); val f2 = min(0.25, cut / dist(b, c))
+                out += P3(b.e + (a.e - b.e) * f1, b.n + (a.n - b.n) * f1, b.u + (a.u - b.u) * f1)
+                out += P3(b.e + (c.e - b.e) * f2, b.n + (c.n - b.n) * f2, b.u + (c.u - b.u) * f2)
+            }
+            out += cur.last(); cur = out
+        }
+        return cur
+    }
+
+    private fun turnAt(a: P3, b: P3, c: P3): Double {
+        val h1 = hypot(b.e - a.e, b.n - a.n); val h2 = hypot(c.e - b.e, c.n - b.n)
+        if (h1 < 1e-6 || h2 < 1e-6) return 90.0
+        val d = ((b.e - a.e) * (c.e - b.e) + (b.n - a.n) * (c.n - b.n)) / (h1 * h2)
+        return Math.toDegrees(kotlin.math.acos(d.coerceIn(-1.0, 1.0)))
+    }
+
+    /** Speed allowed through each vertex: sqrt(lateral accel * turn radius); 0 at the end, slow at climbs in place. */
+    private fun cornerLimits(pts: List<P3>, m: Mission): DoubleArray = curvatureLimits(pts, m).also { lim ->
+        val sp = m.speeds ?: return@also
+        // Speed profile: each (smoothed) vertex takes the speed of the nearest mission point, searched forward.
+        var j = 0
+        for (i in 1 until pts.size - 1) {
+            while (j + 1 < m.path.size && dist(pts[i], m.path[j + 1]) <= dist(pts[i], m.path[j])) j++
+            lim[i] = min(lim[i], sp[j])
+        }
+    }
+
+    private fun curvatureLimits(pts: List<P3>, m: Mission): DoubleArray = DoubleArray(pts.size) { i ->
+        when {
+            i == 0 -> m.speed
+            i == pts.size - 1 -> 0.0
+            else -> {
+                val a = pts[i - 1]; val b = pts[i]; val c = pts[i + 1]
+                val h1 = hypot(b.e - a.e, b.n - a.n); val h2 = hypot(c.e - b.e, c.n - b.n)
+                if (h1 < 0.5 || h2 < 0.5) CORNER_SPEED else {
+                    val th = Math.toRadians(turnAt(a, b, c))
+                    if (th < 1e-3) m.speed else min(m.speed, max(CORNER_SPEED, sqrt(A_LAT * (min(h1, h2) / 2) / kotlin.math.tan(th / 2))))
+                }
+            }
+        }
+    }
+
+    // ---- Follow me: hold a set distance and height from the phone, nose and camera on it ----------
+    @Volatile var following = false; private set
+    @Volatile var followInfo = ""; private set
+    private var followDist = 8.0; private var followHeight = 6.0
+    private var tgtE = Double.NaN; private var tgtN = Double.NaN
+
+    fun startFollow(distM: Double, heightM: Double) {
+        if (state !in listOf(State.IDLE, State.LOADED, State.DONE, State.ABORTED)) return onMessage("Stop the current flight first.")
+        if (ctl.latched) return onMessage("RC override is latched. Centre sticks and Re-arm.")
+        if (!ctl.sticksCentered()) return onMessage("Centre the RC sticks first.")
+        val n = SystemClock.elapsedRealtimeNanos()
+        if (ctl.lat.isNaN() || n - ctl.locT > 1_500_000_000L) return onMessage("No drone GPS yet.")
+        if (ctl.gpsSats in 0 until MIN_SATS) return onMessage("Only ${ctl.gpsSats} drone GPS satellites (need $MIN_SATS).")
+        if (PhoneGps.ageS() > 3 || !(PhoneGps.acc <= FOLLOW_MAX_ACC)) return onMessage("Waiting for a good phone GPS fix (±${FOLLOW_MAX_ACC.toInt()} m). Go outside, allow location.")
+        if (ctl.battery in 0 until FOLLOW_MIN_BATTERY) return onMessage("Battery ${ctl.battery}% is too low to follow.")
+        followDist = distM.coerceIn(FOLLOW_MIN_DIST, 30.0); followHeight = heightM.coerceIn(FOLLOW_MIN_HEIGHT, 40.0)
+        following = true; tgtE = Double.NaN; tgtN = Double.NaN; cmdE = 0.0; cmdN = 0.0; yawRateCmd = 0.0; gimbalSmooth = Double.NaN; lastGimbalPitch = Double.NaN
+        // Origin: home point in the air, here on the ground; the range limit is measured from it.
+        if (ctl.flying) {
+            val h = FlightControllerKey.KeyHomeLocation.create().get()
+            if (h != null) { lat0 = h.latitude; lon0 = h.longitude } else { lat0 = ctl.lat; lon0 = ctl.lon }
+        } else { lat0 = ctl.lat; lon0 = ctl.lon }
+        if (ctl.logFile == null) ctl.startLogging()
+        ctl.event("follow_start dist=$followDist height=$followHeight")
+        if (ctl.flying) arm() else {
+            setState(State.TAKEOFF, "Taking off to follow you…")
+            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> following = false; setState(State.ABORTED, "Takeoff failed: $e") })
+        }
+    }
+
+    fun stopFollow() { if (following) abort("follow stopped") }
+
+    private fun followCheck(): String? = when {
+        ctl.battery in 0 until FOLLOW_MIN_BATTERY -> "battery ${ctl.battery}%: land now"
+        ctl.lat.isNaN() || SystemClock.elapsedRealtimeNanos() - ctl.locT > 2_000_000_000L -> "lost the drone's GPS"
+        else -> null
+    }
+
+    private fun superviseFollow() {
+        when (state) {
+            State.TAKEOFF -> when {
+                ctl.latched -> { following = false; setState(State.ABORTED, "RC took over during takeoff.") }
+                ctl.flying && ctl.altRel > 0.8 -> arm()
+                elapsed() > 20 -> { following = false; setState(State.ABORTED, "Takeoff timed out.") }
+            }
+            State.ARMING -> when {
+                ctl.vsEnabled && ctl.advancedEnabled -> {
+                    ctl.autopilotLabel = "follow"; ctl.autopilot = { followControl() }
+                    setState(State.FOLLOW, "Following you at ${followDist.toInt()} m, ${followHeight.toInt()} m up. No obstacle sensing: keep it in the open. Any RC stick input takes over.")
+                }
+                ctl.latched -> { following = false; setState(State.ABORTED, "RC override latched; Re-arm and start again.") }
+                elapsed() > 6 -> { following = false; setState(State.ABORTED, "Couldn't enable virtual stick.") }
+            }
+            State.FOLLOW -> followCheck()?.let { abort(it) }
+            else -> {}
+        }
+    }
+
+    private fun followControl(): FlightLabController.Setpoint {
+        val dt = FlightLabController.CMD_PERIOD_MS / 1000.0
+        val (e, n) = enu(ctl.lat, ctl.lon)
+        val p = P3(e, n, ctl.altRel); pos = p
+        val vU = (K_ALT * (followHeight - ctl.altRel)).coerceIn(-MAX_DESCENT, FlightLabController.MAX_VERTICAL)
+        val fresh = PhoneGps.ageS() < FOLLOW_STALE_S && PhoneGps.acc <= FOLLOW_MAX_ACC
+        val step = ACCEL * dt
+        if (!fresh) {   // lost the phone: brake to a hover and keep height; resumes when the fix is back
+            followInfo = "Waiting for the phone's GPS · hovering"
+            cmdE += (0 - cmdE).coerceIn(-step, step); cmdN += (0 - cmdN).coerceIn(-step, step)
+            return bodySetpoint(vU, smoothYawRate(0.0, dt))
+        }
+        val (pe, pn) = enu(PhoneGps.lat, PhoneGps.lon)
+        val moving = PhoneGps.speed > 0.8 && !PhoneGps.bearing.isNaN()
+        val b = Math.toRadians(PhoneGps.bearing)
+        val pvE = if (moving) PhoneGps.speed * sin(b) else 0.0; val pvN = if (moving) PhoneGps.speed * cos(b) else 0.0
+        // Where to be: behind you when you walk; otherwise stay on the side it's already on, at the set distance.
+        val dx = e - pe; val dy = n - pn; val dh = hypot(dx, dy)
+        val (ux, uy) = if (moving) Pair(-sin(b), -cos(b)) else if (dh > 0.5) Pair(dx / dh, dy / dh) else Pair(0.0, -1.0)
+        var te = pe + ux * followDist; var tn = pn + uy * followDist
+        val r = hypot(te, tn); if (r > FOLLOW_RANGE) { te *= FOLLOW_RANGE / r; tn *= FOLLOW_RANGE / r }   // leash from the start point
+        // Low-pass the target: phone GPS jitters by metres; the drone shouldn't.
+        val k = min(1.0, dt / FOLLOW_TAU)
+        if (tgtE.isNaN()) { tgtE = te; tgtN = tn } else { tgtE += (te - tgtE) * k; tgtN += (tn - tgtN) * k }
+        var vE = K_FOLLOW * (tgtE - e) + pvE; var vN = K_FOLLOW * (tgtN - n) + pvN
+        if (dh < FOLLOW_MIN_DIST && dh > 0.1) { vE += (dx / dh) * 1.0; vN += (dy / dh) * 1.0 }   // never closer than 3 m
+        val hv = hypot(vE, vN); if (hv > FOLLOW_MAX_SPEED) { vE *= FOLLOW_MAX_SPEED / hv; vN *= FOLLOW_MAX_SPEED / hv }
+        if (hypot(tgtE - e, tgtN - n) < 0.7 && !moving) { vE = 0.0; vN = 0.0 }   // close enough: don't hunt
+        cmdE += (vE - cmdE).coerceIn(-step, step); cmdN += (vN - cmdN).coerceIn(-step, step)
+        // Nose and camera on the phone (held about 1.2 m above the takeoff ground).
+        val yawRate = if (dh > 1.5) smoothYawRate(wrap(Math.toDegrees(atan2(pe - e, pn - n)) - ctl.yaw), dt) else smoothYawRate(0.0, dt)
+        sendGimbal((-Math.toDegrees(atan2(ctl.altRel - 1.2, max(dh, 0.5)))).coerceIn(-90.0, 0.0))
+        followInfo = "Following · ${"%.0f".format(dh)} m from you · phone GPS ±${"%.0f".format(PhoneGps.acc)} m"
+        return bodySetpoint(vU, yawRate)
+    }
+
+    private fun bodySetpoint(vU: Double, yawRate: Double): FlightLabController.Setpoint {
+        val y = Math.toRadians(ctl.yaw)
+        return FlightLabController.Setpoint(fwd = cmdN * cos(y) + cmdE * sin(y), right = -cmdN * sin(y) + cmdE * cos(y), up = vU, yawRate = yawRate)
     }
 
     // ---- helpers -------------------------------------------------------------------------------
@@ -503,6 +700,22 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         const val MAX_DESCENT = 1.0        // m/s
         const val K_YAW = 1.5              // deg/s per deg
         const val MAX_YAW = 60.0           // deg/s
+        const val YAW_ACC = 90.0           // deg/s^2: how fast the yaw rate may change
+        const val YAW_DEADBAND = 1.5       // deg
+        const val LOOKAHEAD_MIN = 3.0      // m: heading aims this far ahead on the path...
+        const val LOOKAHEAD_S = 1.0        // ...plus 1 s of travel
+        const val A_LAT = 1.5              // m/s^2 sideways accel allowed through a corner
+        const val GIMBAL_TAU = 0.6         // s, gimbal target low-pass
+        const val GIMBAL_RATE = 30.0       // deg/s max gimbal slew
+        const val K_FOLLOW = 0.6           // 1/s position gain toward the follow spot
+        const val FOLLOW_TAU = 1.0         // s, phone-position low-pass
+        const val FOLLOW_MAX_SPEED = 6.0   // m/s
+        const val FOLLOW_MIN_DIST = 3.0    // m from the phone, never closer
+        const val FOLLOW_MIN_HEIGHT = 3.0  // m
+        const val FOLLOW_RANGE = 150.0     // m from where following started
+        const val FOLLOW_MAX_ACC = 20.0    // m phone GPS accuracy needed
+        const val FOLLOW_STALE_S = 3.0
+        const val FOLLOW_MIN_BATTERY = 25
         const val POI_HYST = 2.0
         const val POLICY_CORRIDOR = 8.0    // the policy dodges sideways
         const val POLICY_MAX_SPEED = 4.0

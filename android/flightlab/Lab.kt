@@ -44,6 +44,7 @@ object Lab {
             ctl.uploadLastSession(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
         }
         ctl.start()
+        PhoneGps.start(app)
         FlightControllerKey.KeyConnection.create().listen(this) { droneConnected = it == true }
         // listen() only reports changes; poll too so a drone that was connected before we started counts.
         main.post(object : Runnable {

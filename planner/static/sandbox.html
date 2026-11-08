@@ -57,8 +57,9 @@ select { padding-right: 2px; }
 
 /* ---------------- Fly ---------------- */
 #fly { background: #000; touch-action: none; user-select: none; -webkit-user-select: none; }
-#video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-html.real body, html.real #fly { background: transparent !important; }
+#video, #gl { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+html.real #gl { display: none !important; }
+html.real, html.real body, html.real #fly { background: transparent !important; }
 body.watching .pad, body.watching #editBtn { display: none !important; }
 html.real #video, html.real .pad, html.real #camBtn, html.real #editBtn, html.real #raceBtn { display: none !important; }
 #realBtns { display: flex; gap: 6px; } #realBtns[hidden] { display: none; }
@@ -88,6 +89,12 @@ html.real #video, html.real .pad, html.real #camBtn, html.real #editBtn, html.re
 #placeBtns .btn { height: 38px; padding: 0 14px; font-size: 14px; }
 #tilt { position: absolute; z-index: 2; right: calc(max(22px, env(safe-area-inset-right)) + min(40vmin, 176px) + 14px); bottom: max(18px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px; border-radius: 22px; }
 #tilt .icon { width: 40px; height: 36px; }
+/* Placing: the gimbal control sits left of the right stick, so the dock fills the gap between the left stick and it. */
+body.placing #dock { left: calc(max(22px, env(safe-area-inset-left)) + min(40vmin, 176px) + 10px); right: calc(max(22px, env(safe-area-inset-right)) + min(40vmin, 176px) + 14px + 58px + 10px); transform: none; }
+body.placing #placeBtns { max-width: 100%; }
+body.placing #placeBtns .btn { padding: 0 11px; font-size: 13px; white-space: nowrap; }
+body.placing #placeBtns .seg button { padding: 0 9px; }
+@media (max-width: 780px) { body.placing #placeBtns .btn { padding: 0 8px; font-size: 12px; } body.placing #placeBtns .seg button { padding: 0 7px; font-size: 12px; } }
 #tilt span { font-size: 13px; font-weight: 600; }
 #tilt .cap { font-size: 10px; font-weight: 500; color: var(--t3); padding-bottom: 4px; }
 #reticle { position: absolute; z-index: 2; left: 50%; top: 50%; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; border: 1.5px solid rgba(255,255,255,.8); box-shadow: 0 0 0 1px rgba(0,0,0,.25); pointer-events: none; }
@@ -101,7 +108,7 @@ body.placing #mini { top: calc(max(10px, env(safe-area-inset-top)) + 50px); }
 #pill { position: absolute; z-index: 2; top: max(10px, env(safe-area-inset-top)); left: max(12px, env(safe-area-inset-left)); max-width: calc(100% - 340px - 260px); height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: var(--r-pill); font-size: 13px; font-weight: 500; color: var(--t2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 #pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--t3); flex: none; }
 #pill.ok .dot { background: var(--ok); } #pill.bad .dot { background: var(--bad); } #pill.busy .dot { background: var(--t2); }
-#pill.bad { color: var(--t1); }
+#pill.bad { color: var(--t1); } #pill.warn .dot { background: var(--warn); }
 #mapBtns { position: absolute; z-index: 2; left: max(12px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; }
 #mapBtns button { width: 44px; height: 44px; color: var(--t1); }
 #mapBtns button + button { border-top: .5px solid var(--hair-soft); }
@@ -133,7 +140,9 @@ body.sideHidden #pill { max-width: calc(100% - 300px); }
 #sideFoot { padding: 10px 14px 14px; border-top: .5px solid var(--hair-soft); display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 #sideFoot .btn { width: 100%; }
 #side .seg { width: 100%; } #side .seg button { flex: 1; padding: 0 6px; }
-.sub { display: flex; gap: 8px; margin-top: 10px; }
+.sub { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+.sub .btn { white-space: nowrap; padding: 0 12px; }
+#aDrone.on { background: var(--accent); color: #fff; }
 .sub .btn { flex: 1; height: 34px; padding: 0 8px; font-size: 13px; color: var(--t2); }
 .label { font-size: 12px; color: var(--t3); margin: 16px 2px 6px; }
 #pts { list-style: none; padding: 0; margin: 0; border-radius: 14px; background: rgba(255,255,255,.05); }
@@ -170,10 +179,29 @@ body.sideHidden #pill { max-width: calc(100% - 300px); }
 }
 
 /* ---------------- Settings (iOS grouped list) ---------------- */
-#settings, #library { background: var(--bg); overflow-y: auto; padding: calc(max(10px, env(safe-area-inset-top)) + 4px) max(20px, env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
-#settings .cols, #library .cols { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; align-items: start; }
-@media (orientation: portrait), (max-width: 640px) { #settings .cols, #library .cols { grid-template-columns: 1fr; } }
-#settings h2, #library h2 { font-size: 24px; font-weight: 600; margin: 0; height: 42px; display: flex; align-items: center; grid-column: 1 / -1; padding-right: 260px; }
+#settings, #library, #videos { background: var(--bg); overflow-y: auto; padding: calc(max(10px, env(safe-area-inset-top)) + 4px) max(20px, env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+#settings .cols, #library .cols, #videos .cols { max-width: 1100px; margin: 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; align-items: start; }
+@media (orientation: portrait), (max-width: 640px) { #settings .cols, #library .cols, #videos .cols { grid-template-columns: 1fr; } }
+#settings h2, #library h2, #videos h2 { font-size: 24px; font-weight: 600; margin: 0; height: 42px; display: flex; align-items: center; grid-column: 1 / -1; padding-right: 260px; }
+#videos h3 { font-size: 13px; color: var(--t3); font-weight: 400; margin: 12px 16px 6px; }
+#vGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+.vcard { border-radius: 14px; overflow: hidden; background: rgba(255,255,255,.05); cursor: pointer; display: flex; flex-direction: column; }
+.vcard .th { aspect-ratio: 16/9; background: #111 center/cover no-repeat; position: relative; }
+.vcard .th span { position: absolute; right: 6px; bottom: 6px; font-size: 11px; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,.6); }
+.vcard .bd { padding: 8px 10px 10px; } .vcard b { display: block; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vcard small { font-size: 12px; color: var(--t3); }
+.badge { display: inline-block; margin: 6px 4px 0 0; font-size: 11px; padding: 2px 7px; border-radius: 8px; background: rgba(120,160,255,.18); color: var(--t1); }
+.badge.done { background: rgba(80,200,120,.22); } .badge.failed { background: rgba(255,90,90,.22); }
+#vStore { font-size: 12px; color: var(--t3); }
+.meter { height: 6px; border-radius: 3px; background: rgba(255,255,255,.08); margin: 0 16px 8px; overflow: hidden; } .meter i { display: block; height: 100%; background: var(--accent); }
+#player { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.92); display: flex; gap: 16px; padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+#player[hidden] { display: none; }
+#player video { flex: 1; min-width: 0; max-height: 100%; background: #000; border-radius: 12px; }
+#player aside { width: 300px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+#player input[type=text] { font: 15px -apple-system, system-ui, sans-serif; color: var(--t1); background: rgba(255,255,255,.08); border: 0; border-radius: 10px; padding: 10px 12px; text-align: left; }
+#player .prep { flex: 1; display: grid; place-items: center; color: var(--t2); }
+@media (orientation: portrait) { #player { flex-direction: column; } #player aside { width: auto; } }
+#recBtn.on { background: var(--bad); color: #fff; } #followBtn.on { background: var(--accent); color: #fff; }
 #settings h3, #library h3 { font-size: 13px; color: var(--t3); font-weight: 400; margin: 12px 16px 6px; }
 .hrow { display: flex; align-items: center; justify-content: space-between; }
 .hrow .btn { height: 30px; padding: 0 12px; font-size: 13px; }
@@ -192,6 +220,8 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
 .set > span { flex: 1; font-size: 15px; }
 .set small { display: block; margin-top: 2px; font-size: 12px; color: var(--t3); line-height: 1.4; white-space: pre-wrap; }
 </style>
+<script type="importmap">{"imports": {"three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/", "@sparkjsdev/spark": "https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@2.3.1/dist/spark.module.js"}}</script>
+<script type="module" src="phonesim.js"></script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -212,11 +242,12 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></symbol>
 </svg>
 
-<div id="modes" class="glass"><div class="seg"><button data-m="plan">Plan</button><button data-m="fly" class="on">Fly</button><button data-m="library">Library</button><button data-m="settings">Settings</button></div></div>
+<div id="modes" class="glass"><div class="seg"><button data-m="plan">Plan</button><button data-m="fly" class="on">Fly</button><button data-m="library">Library</button><button data-m="videos">Videos</button><button data-m="settings">Settings</button></div></div>
 
 <!-- ================= FLY ================= -->
 <section class="screen" id="fly">
   <img id="video" alt="">
+  <canvas id="gl" hidden></canvas>
   <canvas id="ov"></canvas>
   <div id="statusCap" class="glass"><div id="status"><span class="dot"></span><span class="txt">Loading</span></div><div id="hud"></div></div>
   <canvas id="mini" width="320" height="320"></canvas>
@@ -248,7 +279,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       <button id="editBtn" class="icon">Add points</button>
       <button id="raceBtn" class="icon" hidden>Race</button>
       <button id="raceExit" class="icon" hidden>Exit race</button>
-      <span id="realBtns" hidden><button id="landBtn" class="icon">Land</button><button id="stopBtn" class="icon">Stop</button></span>
+      <span id="realBtns" hidden><button id="aiLineBtn" class="icon" hidden>AI line</button><button id="followBtn" class="icon">Follow</button><button id="recBtn" class="icon">Rec</button><button id="landBtn" class="icon">Land</button><button id="stopBtn" class="icon">Stop</button></span>
       <button id="fsBtn" class="icon" aria-label="Full screen"><svg class="i"><use href="#i-expand"/></svg></button>
     </div>
   </div>
@@ -274,7 +305,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   <aside id="side" class="glass">
     <div id="sideScroll">
       <div class="seg"><button id="toolRoute" class="on">Waypoint</button><button id="toolLook">Look-at</button><button id="toolHere">I'm here</button></div>
-      <div class="sub"><button class="btn" id="undo">Undo</button><button class="btn" id="clear">Clear</button><button class="btn" id="sample">Sample</button><button class="btn" id="aHere">A at me</button></div>
+      <div class="sub"><button class="btn" id="undo">Undo</button><button class="btn" id="clear">Clear</button><button class="btn" id="sample">Sample</button><button class="btn" id="aHere">A at me</button><button class="btn" id="aDrone" hidden>A = drone</button></div>
       <button class="btn" id="place3d" style="width:100%;margin-top:8px">Add from 3D view</button>
       <div class="speedRow"><span>Speed</span><div class="stepper" id="spdStep"><button data-s="-1" aria-label="Slower"><svg class="i"><use href="#i-minus"/></svg></button><span id="spdVal">4 m/s</span><button data-s="1" aria-label="Faster"><svg class="i"><use href="#i-plus"/></svg></button></div></div>
       <div class="label" style="display:flex;justify-content:space-between;align-items:center">Route<button class="btn" id="saveRoute" style="height:28px;padding:0 10px;font-size:12px">Save</button></div>
@@ -304,6 +335,40 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   </div>
 </section>
 
+<!-- ================= VIDEOS ================= -->
+<section class="screen" id="videos" hidden>
+  <div class="cols">
+    <h2>Videos</h2>
+    <div id="vPhoneCol" hidden>
+      <h3 class="hrow">On this phone<span id="vStore"></span></h3>
+      <div class="meter"><i id="vMeter" style="width:0"></i></div>
+      <ul class="group rows" id="vPhone"></ul>
+      <div class="group" style="margin-top:10px"><div class="set"><span>Delete video after upload<small>Frees the phone right away; the small flight logs stay</small></span><input type="checkbox" class="switch" id="vAuto" checked></div></div>
+      <p class="hint" style="margin:10px 16px">Rec on the Fly screen (Real drone) records the drone's stream plus GPS and gimbal logs, and 4K to the drone's SD card. Recording won't start under 2 GB free and stops itself under 1 GB.</p>
+    </div>
+    <div>
+      <h3 class="hrow">On cradle<button class="btn" id="vRefresh">Refresh</button></h3>
+      <div id="vGrid"></div>
+      <p class="hint" style="margin:12px 16px">Tap a video to watch it, name it, or make a splat from it. Splats are only made when you ask.</p>
+    </div>
+  </div>
+</section>
+<div id="player" hidden>
+  <video id="pVideo" controls playsinline preload="metadata"></video>
+  <div class="prep" id="pPrep" hidden>Making a phone-size copy…</div>
+  <aside>
+    <div class="hrow"><b id="pWhen"></b><button class="btn" id="pClose">Close</button></div>
+    <input type="text" id="pTitle" placeholder="Name this video">
+    <small id="pInfo" style="color:var(--t3)"></small>
+    <h3 style="margin:8px 0 0;font-size:13px;color:var(--t3);font-weight:400">Make a splat from it</h3>
+    <input type="text" id="pSplat" placeholder="Splat name, e.g. backyard-v2" autocapitalize="none">
+    <div class="seg" id="pMethod"><button data-v="local" class="on">Cradle GPU</button><button data-v="worldlabs">World Labs</button></div>
+    <small style="color:var(--t3)">Cradle GPU: free, 15-40 min, shows only what the camera saw, placed on the map from the flight's GPS. World Labs: about $5, cleaner from new angles but fills in unseen areas. One job runs at a time.</small>
+    <button class="btn primary" id="pGo">Generate splat</button>
+    <div id="pJobs"></div>
+  </aside>
+</div>
+
 <!-- ================= SETTINGS ================= -->
 <section class="screen" id="settings" hidden>
   <div class="cols">
@@ -326,6 +391,8 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       <h3>Drone</h3>
       <div class="group">
         <div class="set"><span>Fly screen drives<small id="droneInfo">Checking the drone</small></span><div class="seg" id="targetSeg"><button data-v="sim" class="on">Sandbox</button><button data-v="real">Real drone</button></div></div>
+        <div class="set"><span>AI line speed cap<small>Race AI line flies the trained AI's racing line with its speed profile scaled down to this top speed</small></span><select id="aiCap"><option value="2">2 m/s</option><option value="3" selected>3 m/s</option><option value="4">4 m/s</option><option value="6">6 m/s</option><option value="8">8 m/s</option></select></div>
+        <div class="set"><span>Follow me<small>Distance and height it keeps from your phone</small></span><span><select id="followDist"><option>5</option><option selected>8</option><option>12</option><option>20</option></select> m · <select id="followHt"><option>4</option><option selected>6</option><option>10</option><option>15</option></select> m up</span></div>
         <div class="set"><span>Obstacle AI<small>Shadow only beeps and logs what the policy would do. Live lets it fly the dodge</small></span><div class="seg" id="aiSeg"><button data-v="off">Off</button><button data-v="shadow" class="on">Shadow</button><button data-v="policy">Live</button></div></div>
         <div class="set"><span>Flight Lab panel<small>Raw telemetry, axis check, capture, test manoeuvres</small></span><button class="btn" id="labBtn">Open</button></div>
         <div class="set"><span>App<small id="appVer"></small></span><button class="btn" id="diagBtn">Send diagnostics</button><button class="btn" id="updBtn">Check for updates</button><button class="btn" id="reloadBtn">Reload</button></div>
@@ -333,7 +400,10 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       </div>
       <h3>Real world</h3>
       <div class="group">
+        <div class="set"><span>Obstacles<small>Pass through counts hits but never stops you (the splat's collision mesh isn't perfect). Solid blocks you, but you can always back out</small></span><div class="seg" id="obsSeg"><button data-v="pass" class="on">Pass through</button><button data-v="solid">Solid</button></div></div>
+        <div class="set"><span>Fly on this phone<small>Downloads the scene once (about 20 MB) and renders it here: instant sticks, no network lag. Races and Watch AI still render on cradle</small></span><input type="checkbox" class="switch" id="localSim" checked></div>
         <div class="set"><span>Real-flight safety margin<small>Side clearance that grows with distance from A, sized to the calibration. Always on for Send to drone</small></span><input type="checkbox" class="switch" id="useMargin" checked></div>
+        <div class="set"><span>Real flight path<small>Planned: the smoothed path you see, and tight spots at A, B or a waypoint only warn. As drawn: straight lines through your points. Strict: blocks on any clearance problem and adds the calibration margin. The RC always overrides</small></span><select id="realPath"><option value="planned">Planned</option><option value="drawn">As drawn</option><option value="strict">Strict</option></select></div>
         <div class="set"><span>Obstacles on the real drone<small>Human hovers and waits for you. Policy lets the learned dodge fly around</small></span><div class="seg" id="handoffSeg"><button data-v="human" class="on">Human</button><button data-v="policy">Policy</button></div></div>
         <div class="set"><span>Map to GPS calibration<small id="calInfo">No pins yet</small></span><button class="btn" id="calReset">Reset</button></div>
       </div>
@@ -350,12 +420,40 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     scene: null, scenes: [], geo: null, meta: null, top: new Image(), occ: new Image(), calib: null,
     pts: [], pois: [], tool: 'route', sel: null, view: null,
     fly: null, active: null, dirty: true, mode: 'idle',  // idle | flying | paused | manual | done
-    screen: 'fly', leave: 'hover', handoff: 'human', pausedByLeave: false,
+    screen: 'fly', leave: 'hover', obs: 'pass', handoff: 'human', pausedByLeave: false,
     st: null, sticks: [0, 0, 0, 0], collisions0: 0, cam: 'fpv',
     me: null, watch: null, placing: false, tilt: -10, sideHidden: false,
   };
   const say = (t, cls = '') => { $('msg').textContent = t; $('msg').className = cls; };
-  async function j(url, opts) { const r = await fetch(url, opts); const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = { error: t }; } if (!r.ok) throw new Error(d.error || r.status); return d; }
+  async function j(url, opts) { const r = await fetch(url, opts); const t = await r.text(); let d; try { d = JSON.parse(t); } catch { d = { error: t }; } if (!r.ok) throw new Error(d.error || r.status); if (d && d.ok && d.id && d.traj) simTrajs.set(d.id, d); return d; }
+  // ---- on-phone sandbox (phonesim.js): the page drives it through the same /sim/replay and /sim/mode calls as cradle's viewer
+  const simTrajs = window.simTrajs = new Map();
+  function simFetch(u) {
+    if (S.local) { try { const q = new URL(u, location.href); if (q.pathname === '/sim/replay') S.local.replayCall(q.searchParams); else if (q.pathname === '/sim/mode') S.local.setMode(q.searchParams.get('mode')); } catch (e) { console.warn('local sim', e); } }
+    return fetch(u);
+  }
+  const localOn = () => !!(S.local && S.local.scene === S.scene && !S.real && !(S.watch && typeof S.watch === 'object') && !(S.gatesKey && (S.run || (S.placing && S.kind === 'race'))));
+  async function loadLocal() {
+    if (!window.PhoneSim || !S.scene || store.get('localSim') === '0') return;
+    if (S.local?.scene === S.scene || S.localLoading === S.scene) return;
+    const name = S.scene; S.localLoading = name;
+    try {
+      if (!(await PhoneSim.available(name))) { S.localLoading = null; return; }
+      let last = 0;
+      const sim = await PhoneSim.open(name, $('gl'), (got, total) => { if (Date.now() - last > 700) { last = Date.now(); flashToast(`Downloading ${name} to the phone · ${total ? Math.round(100 * got / total) + '%' : (got / 1e6).toFixed(0) + ' MB'}`); } });
+      if (S.scene !== name) { sim.dispose(); return; }
+      S.local?.dispose(); S.local = sim;
+      // start where cradle's drone is, so switching mid-flight doesn't jump
+      if (S.st?.pos && S.st.scene === name) sim.dyn.reset(S.st.pos, (S.st.yaw_deg || 0) * Math.PI / 180);
+      flashToast('Flying on the phone now: no network lag');
+    } catch (e) { console.warn('phone sim', e); flashToast(`Phone rendering unavailable: ${e.message}`); }
+    finally { if (S.localLoading === name) S.localLoading = null; }
+  }
+  window.addEventListener('phonesim-ready', () => loadLocal());
+  setTimeout(() => {   // after the rest of the script has run (store is declared below)
+    $('localSim').checked = store.get('localSim') !== '0';
+    $('localSim').onchange = () => { store.set('localSim', $('localSim').checked ? '1' : '0'); if ($('localSim').checked) loadLocal(); else { S.local?.dispose(); S.local = null; } };
+  }, 0);
   const alt = () => Math.max(3, +$('alt').value || 10);
   const store = { get: k => { try { return localStorage.getItem('sb.' + k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem('sb.' + k, v); } catch {} } };
   const D2R = Math.PI / 180;
@@ -364,7 +462,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   async function show(name) {
     if (name === S.screen) return;
     const from = S.screen; S.screen = name;
-    for (const n of ['fly', 'plan', 'library', 'settings']) $(n).hidden = n !== name;
+    for (const n of ['fly', 'plan', 'library', 'videos', 'settings']) $(n).hidden = n !== name;
     document.querySelectorAll('#modes button').forEach(b => b.classList.toggle('on', b.dataset.m === name));
     if (from === 'fly' && S.placing && name !== 'fly') { const wasPlan = S.placeFrom === 'plan'; setPlacingUi(false); S.placeFrom = null; if (wasPlan && S.mode === 'manual') S.mode = 'idle'; invalidate(); }
     if (S.real) {
@@ -382,6 +480,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     if (name === 'plan') { setTimeout(() => { if (!S.view) fitView(); drawMap(); }, 30); loadLib(); }
     if (name === 'settings') renderCal();
     if (name === 'library') loadLib();
+    if (name === 'videos') loadVideos();
   }
   document.querySelectorAll('#modes button').forEach(b => b.onclick = () => show(b.dataset.m));
   function seg(id, key) {
@@ -389,7 +488,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     el.querySelectorAll('button').forEach(b => b.onclick = () => set(b.dataset.v));
     set(store.get(key) || S[key]);
   }
-  seg('leaveSeg', 'leave'); seg('handoffSeg', 'handoff');
+  seg('leaveSeg', 'leave'); seg('handoffSeg', 'handoff'); seg('obsSeg', 'obs');
 
   // ================= scene, calibration, geo transforms =================
   async function init() {
@@ -413,6 +512,8 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     loadOcc(); renderPts(); renderCal();
     S.hmap = null; S.air = null; loadAirspace();   // always fetched: the FAA ceiling caps point heights even with the card hidden
     if (S.layers.h) loadHeights();
+    if (S.local && S.local.scene !== name) { S.local.dispose(); S.local = null; }
+    loadLocal();
   }
   $('scene').onchange = e => pickScene(e.target.value).then(() => loadSample(false));
   let occT;
@@ -438,13 +539,13 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
 
   // ================= GPS: locate me + "I'm here" pins =================
   function startGps() {
-    if (S.watch != null) return;
+    if (S.gpsWatch != null) return;
     if (!navigator.geolocation) return say("This browser can't share its location.", 'bad');
     if (!hasGeo()) return say("This scene has no GPS alignment, so your position can't be shown on it.", 'bad');
-    S.watch = navigator.geolocation.watchPosition(p => {
+    S.gpsWatch = navigator.geolocation.watchPosition(p => {
       S.me = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy, t: Date.now() };
       $('locBtn').classList.add('on'); drawMap();
-    }, e => { say(`Location unavailable: ${e.message}. Allow location for this site (iPhone: Settings → Privacy → Location Services → Safari Websites).`, 'bad'); S.watch = null; }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+    }, e => { say(`Location unavailable: ${e.message}. Allow location for this site (iPhone: Settings → Privacy → Location Services → Safari Websites).`, 'bad'); S.gpsWatch = null; }, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
   }
   $('locBtn').onclick = () => {
     startGps();
@@ -571,6 +672,9 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       g.fillStyle = i === 0 ? '#fff' : '#111'; g.font = `600 ${12.5 * r}px -apple-system, system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(i === 0 ? 'A' : String(i), x, y + .5 * r);
       if (big) { g.font = `500 ${11.5 * r}px -apple-system, system-ui`; g.lineWidth = 3 * r; g.strokeStyle = 'rgba(0,0,0,.65)'; g.strokeText(`${p.alt} m`, x, y + 23 * r); g.fillStyle = 'rgba(255,255,255,.92)'; g.fillText(`${p.alt} m`, x, y + 23 * r); }
     });
+    // The AI's best lap on this course, if it has one.
+    const gl = S.race?.ghostLine;
+    if (gl?.length > 1) { g.save(); g.setLineDash([6 * r, 5 * r]); g.lineCap = 'round'; g.strokeStyle = 'rgba(255,170,90,.9)'; g.lineWidth = 2.5 * r; g.beginPath(); gl.forEach((q, i) => { const [x, y] = T.to(q[1], q[2]); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); g.restore(); }
     // Race gates: a bar across the gate, as wide as it is, with a tick for the direction through it.
     (S.race?.gates || []).forEach((gt, i) => {
       const h = gt.yaw_deg * D2R, rad = gt.diameter_m / 2, [a1, b1] = T.to(gt.x + Math.sin(h) * rad, gt.y - Math.cos(h) * rad), [a2, b2] = T.to(gt.x - Math.sin(h) * rad, gt.y + Math.cos(h) * rad), [cx, cy] = T.to(gt.x, gt.y), [tx, ty] = T.to(gt.x + Math.cos(h) * 1.5, gt.y + Math.sin(h) * 1.5);
@@ -783,15 +887,35 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
 
   // Live route check.
   let prevT, prevSeq = 0;
-  function invalidate() { S.dirty = true; renderPts(); drawMap(); clearTimeout(prevT); prevT = setTimeout(previewPlan, 450); }
+  function invalidate(keepRace) { if (!keepRace && S.realRace) { S.realRace = null; flashToast('Back to your route (race cleared)'); } S.dirty = true; renderPts(); drawMap(); clearTimeout(prevT); prevT = setTimeout(previewPlan, 450); }
   function pill(t, cls) { $('pill').querySelector('.t').textContent = t; $('pill').className = 'glass ' + (cls || ''); }
+  // The planner refuses a route when a stop (A, B, a waypoint) sits in a tight spot: on a roof/canopy, under
+  // an overhang, or closer than 1.5 m to the splat. Splat noise trips that a lot, so unless Strict is chosen we
+  // retry with those checks relaxed and only report what was relaxed. The interpolated path stays the planner's.
+  async function planLenient(body, strict) {
+    const post = b => j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) }).catch(e => ({ ok: false, reason: e.message }));
+    let P = await post(body);
+    if (P.ok || strict) return { P, relaxed: null };
+    const first = P.reason;
+    for (const [tweak, note] of [
+      [{ takeoff_land: false }, 'takeoff/landing spot checks skipped'],
+      [{ takeoff_land: false, clear_m: 0.8 }, 'clearance relaxed to 0.8 m'],
+      [{ takeoff_land: false, clear_m: 0.3, clear_base_h: 0, clear_growth_per_m: 0 }, 'clearance relaxed to 0.3 m'],
+    ]) {
+      if (!body.takeoff_land && tweak.takeoff_land === false && Object.keys(tweak).length === 1) continue;
+      P = await post({ ...body, ...tweak });
+      if (P.ok) return { P, relaxed: `${first}: ${note}`, noGround: true };
+    }
+    return { P: { ok: false, reason: first }, relaxed: null };
+  }
   async function previewPlan() {
     if (S.pts.length < 2) return pill('Tap the map to add waypoints (first = takeoff A)', '');
     const seq = ++prevSeq; pill('Checking route', 'busy');
     try {
-      const d = await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request(null)) });
+      const { P: d, relaxed } = await planLenient(request(null), $('realPath').value === 'strict');
       if (seq !== prevSeq) return;
-      if (!d.ok) { S.fly = null; pill(`Blocked: ${d.reason || 'no safe route'}`, 'bad'); }
+      if (!d.ok) { S.fly = null; pill(`${d.reason || 'no route'} · flies as drawn`, 'warn'); }
+      else if (relaxed) { S.fly = d; S.dirty = false; pill(`${Math.round(d.length_m)} m · ${Math.round(d.duration_s)} s · tight: ${relaxed}`, 'warn'); }
       else { S.fly = d; S.dirty = false; const noRange = S.pois.some(p => p.radius_m) && !(d.pois || []).some(q => q.radius_m != null); pill(`${noRange ? 'Look-at ranges not applied yet · ' : ''}${Math.round(d.length_m)} m · ${Math.round(d.duration_s)} s${d.collisions ? ` · ${d.collisions} collision${d.collisions > 1 ? 's' : ''}` : ' · clear'}${$('useMargin').checked ? ' · with margin' : ''}`, d.collisions ? 'bad' : 'ok'); }
       drawMap();
     } catch (e) { if (seq === prevSeq) pill(`Error: ${e.message}`, 'bad'); }
@@ -809,14 +933,14 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   }
   async function startReplay(d) {
     S.active = d; S.fly = d; S.dirty = false; S.pausedByLeave = false;
-    await fetch(`/sim/replay?sid=${SID}&id=${d.id}&cam=${S.cam}`); await fetch(`/sim/replay?sid=${SID}&id=${d.id}&t=play&from=0`);
+    await simFetch(`/sim/replay?sid=${SID}&id=${d.id}&cam=${S.cam}`); await simFetch(`/sim/replay?sid=${SID}&id=${d.id}&t=play&from=0`);
     S.mode = 'flying'; S.collisions0 = S.st?.collisions ?? 0;
   }
   async function plan(fromHere) {
     if (!fromHere && S.pts.length < 2) return say('Add at least two points (A and one more).', 'bad');
     say(fromHere ? 'Re-planning from here' : 'Planning');
     try {
-      const d = (!fromHere && S.fly && !S.dirty) ? S.fly : await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(request(fromHere)) });
+      const d = (!fromHere && S.fly && !S.dirty) ? S.fly : (await planLenient(request(fromHere), $('realPath').value === 'strict')).P;
       if (!d.ok) return say(`No safe route: ${d.reason || 'unknown'}.${fromHere ? ' Fly somewhere more open and try again.' : ' Move or raise the points in red areas.'}`, 'bad');
       await startReplay(d);
       say(`${fromHere ? 'Back on the route' : 'Flying'}: ${Math.round(d.length_m)} m, ${Math.round(d.duration_s)} s.`, 'ok');
@@ -828,21 +952,21 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   async function pause() {
     if (S.mode === 'watch' && S.watch) {
       const t = (S.st?.replay?.t ?? 0).toFixed(2), k = encodeURIComponent(S.watch.key);
-      await fetch(`/sim/replay?sid=${SID}&ghost=${k}&t=${S.watch.paused ? `play&from=${t}` : t}`); S.watch.paused = !S.watch.paused; return;
+      await simFetch(`/sim/replay?sid=${SID}&ghost=${k}&t=${S.watch.paused ? `play&from=${t}` : t}`); S.watch.paused = !S.watch.paused; return;
     }
     if (!S.active) return;
     const t = (S.st?.replay?.t ?? 0).toFixed(2);
-    if (S.mode === 'flying') { await fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${t}`); S.mode = 'paused'; }
-    else if (S.mode === 'paused') { await fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=play&from=${t}`); S.mode = 'flying'; }
+    if (S.mode === 'flying') { await simFetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${t}`); S.mode = 'paused'; }
+    else if (S.mode === 'paused') { await simFetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=play&from=${t}`); S.mode = 'flying'; }
   }
   $('pauseBtn').onclick = () => pause();
   $('restart').onclick = async () => { if (!S.active) return; await startReplay(S.active); show('fly'); };
-  $('camBtn').onclick = () => { S.cam = S.cam === 'fpv' ? 'chase' : 'fpv'; $('camBtn').textContent = S.cam === 'fpv' ? 'First person' : 'Chase'; if (S.active) fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&cam=${S.cam}`); };
+  $('camBtn').onclick = () => { S.cam = S.cam === 'fpv' ? 'chase' : 'fpv'; $('camBtn').textContent = S.cam === 'fpv' ? 'First person' : 'Chase'; if (S.active) simFetch(`/sim/replay?sid=${SID}&id=${S.active.id}&cam=${S.cam}`); };
 
   async function takeover() {
     if (!['flying', 'paused'].includes(S.mode)) return;
     S.mode = 'manual'; S.pausedByLeave = false;
-    await fetch(`/sim/mode?sid=${SID}&mode=manual`);   // keeps the replay's pose: you fly from exactly here
+    await simFetch(`/sim/mode?sid=${SID}&mode=manual`);   // keeps the replay's pose: you fly from exactly here
   }
   function remainingFrom(pos) {
     const route = $('loop').checked ? [...S.pts, S.pts[0]] : S.pts; let best = 1, bd = Infinity;
@@ -868,53 +992,76 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   // ================= send to the real drone =================
   // Same mission format the web planner's Launch writes; Flight Lab's runner flies route_rel relative to its takeoff spot.
   // Plans with the real-flight margin and returns the mission (throws with a readable reason).
-  async function buildMission() {
+  async function buildMission(opts = {}) {
     if (S.pts.length < 2) throw new Error('Add at least two points first.');
     if (!hasGeo()) throw new Error("This scene has no GPS alignment, so it can't become a real mission.");
     {
-      const body = request(null, true);
-      const P = await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-      if (!P.ok) throw new Error(`Not safe for a real flight: ${P.reason}. Raise or move the points.`);
-      if (P.collisions) throw new Error(`The plan touches obstacles (${P.collisions}); fix the route first.`);
+      const mode = opts.mode || $('realPath').value, strict = mode === 'strict';
+      const body = request(null, strict);
+      if (!strict) { body.clear_base_h = 0; body.clear_growth_per_m = 0; }
+      const warn = [];
+      let { P, relaxed, noGround } = mode === 'drawn' ? { P: await planLenient(body, false).then(r => r.P) } : await planLenient(body, strict);
+      if (strict) {
+        if (!P.ok) throw new Error(`Not safe for a real flight: ${P.reason}. Raise or move the points, or set Settings → Real flight path → Planned.`);
+        if (P.collisions) throw new Error(`The plan touches obstacles (${P.collisions}); fix the route first.`);
+      }
+      if (relaxed) warn.push(`Tight spot (${relaxed}).`);
+      if (P.ok && P.collisions && mode !== 'drawn') warn.push(`In the sandbox this route touches obstacles ${P.collisions}×.`);
+      // Planner gave nothing usable: fly exactly the points.
+      const drawn = mode === 'drawn' || !P.ok;
       const A = S.pts[0], c = S.calib, k = c.scale_corr || 1, tr = (c.yaw_trim_deg || 0) * D2R;
-      const groundA = Math.max(0, P.traj[0].z - 0.35);
-      const toReal = (x, y, z) => { const dx = (x - A.x) * k, dy = (y - A.y) * k; return { e_m: +(dx * Math.cos(tr) - dy * Math.sin(tr)).toFixed(2), n_m: +(dx * Math.sin(tr) + dy * Math.cos(tr)).toFixed(2), up_m: +(z * k).toFixed(2) }; };
+      if (drawn) {
+        // Exactly your points: up from A, straight legs at each point's height (metres above the takeoff spot).
+        if (!P.ok) warn.push(`Sandbox couldn't check this route (${P.reason}).`);
+        else if (P.collisions) warn.push(`In the sandbox this route hits obstacles ${P.collisions}×.`);
+        const seq = $('loop').checked ? [...S.pts, S.pts[0]] : S.pts;
+        const path = [[A.x, A.y, 1.2], ...seq.map(p => [p.x, p.y, p.alt])];
+        const len = path.slice(1).reduce((s2, p, i) => s2 + Math.hypot(p[0] - path[i][0], p[1] - path[i][1], p[2] - path[i][2]), 0);
+        P = { ok: true, path, traj: [{ t: 0, z: 0, yaw: 0 }], legs: [], pois: [], id: P.id || null, length_m: len, duration_s: len / +$('speed').value, min_clear_m: P.min_clear_m ?? null, collisions: P.collisions ?? null };
+      }
+      const groundA = (drawn || noGround) ? 0 : Math.max(0, P.traj[0].z - 0.35);
+      const toReal = (x, y, z) => { const dx = (x - A.x) * k, dy = (y - A.y) * k; return { e_m: +(dx * Math.cos(tr) - dy * Math.sin(tr)).toFixed(2), n_m: +(dx * Math.sin(tr) + dy * Math.cos(tr)).toFixed(2), up_m: +(drawn ? z : z * k).toFixed(2) }; };
       const ll = (x, y) => { const q = sceneToLL(x, y); return { lat: +q.lat.toFixed(7), lon: +q.lon.toFixed(7) }; };
-      const m = marginParams(true), reach = Math.max(...P.path.map(p => Math.hypot(p[0] - A.x, p[1] - A.y)));
+      const m = mode === 'strict' ? marginParams(true) : { base: 0, rate: 0 }, reach = Math.max(...P.path.map(p => Math.hypot(p[0] - A.x, p[1] - A.y)));
       const pinned = (c.pins || []).length > 0;
       const mission = {
-        version: 1, name: `sandbox_${S.scene}`, created: new Date().toISOString(), source: 'sandbox',
+        version: 1, name: opts.name || `sandbox_${S.scene}`, created: new Date().toISOString(), source: 'sandbox',
         frame: 'route_rel is metres east/north/up relative to the takeoff point (place the drone on A). lat/lon are for reference only.',
         loop: $('loop').checked, takeoff_land: true, home: ll(A.x, A.y),
-        limits: { ceiling_m: +(Math.max(...P.path.map(p => p[2])) * k + 5).toFixed(1), min_alt_m: Math.min(...S.pts.map(p => p.alt)), clear_h_m: 1.5, clear_v_m: 1.5, cruise_speed_mps: +$('speed').value, corridor_m: 1.5 },
+        path_mode: drawn ? 'drawn' : mode,
+        limits: { ceiling_m: +(Math.max(...P.path.map(p => p[2])) * (drawn ? 1 : k) + 5).toFixed(1), min_alt_m: Math.min(...S.pts.map(p => p.alt)), clear_h_m: 1.5, clear_v_m: 1.5, cruise_speed_mps: opts.speeds ? Math.max(...opts.speeds) : +$('speed').value, corridor_m: 1.5 },
+        ...(opts.speeds && drawn ? { speeds_mps: [opts.speeds[0], ...opts.speeds] } : {}),
         obstacle_handoff: S.handoff,
         failsafe: { on_link_loss: 'return_to_home', on_low_battery_pct: 25, on_rc_input: 'latch_hand_to_rc' },
         waypoints: S.pts.slice(1).map(p => ({ ...ll(p.x, p.y), alt_m: p.alt })),
         route: P.path.map((p, i) => ({ ...ll(p[0], p[1]), alt_m: +p[2].toFixed(1), kind: i === 0 ? 'home' : 'waypoint' })),
         route_rel: P.path.map(p => toReal(p[0], p[1], p[2] - groundA)),
-        pois_rel: S.pois.map(p => ({ ...toReal(p.x, p.y, ((P.pois?.find(q => q.label === p.label)?.z) ?? 1) - groundA), label: p.label, ...(p.radius_m ? { radius_m: +(p.radius_m * k).toFixed(1) } : {}) })),
+        pois_rel: S.pois.map(p => ({ ...toReal(p.x, p.y, ((P.pois?.find(q => q.label === p.label)?.z) ?? (drawn ? (p.z ?? 1) : 1)) - groundA), label: p.label, ...(p.radius_m ? { radius_m: +(p.radius_m * k).toFixed(1) } : {}) })),
         alignment: { scale_corr: k, yaw_trim_deg: c.yaw_trim_deg || 0, offset_e: c.offset_e || 0, offset_n: c.offset_n || 0, pins: (c.pins || []).length, pin_rms_m: c.pin_rms_m ?? null, measured: !!c.measured, heading_checked: !!c.heading_checked, margin_base_m: m.base, margin_growth_per_m: m.rate, clear_m: 1.5, max_margin_m: +(m.base + m.rate * reach).toFixed(1) },
         legs: P.legs || [], pois: S.pois.map(p => ({ ...ll(p.x, p.y), label: p.label })), poi_mode: 'nearest',
         flight_style: $('style').value, fpv_gimbal_deg: -10,
         camera_schedule: P.traj.filter((_, i) => i % 5 === 0).map(t => ({ t: t.t, yaw_deg: +(90 - t.yaw / D2R).toFixed(1), gimbal_pitch_deg: t.gimbal_pitch_deg ?? null, poi: t.poi ?? -1 })),
         sim_request: body,
         sim_preview: { scene: S.scene, id: P.id, length_m: P.length_m, duration_s: P.duration_s, min_clear_m: P.min_clear_m, collisions: P.collisions },
-        buildings_source: `splat:${S.scene}`, warnings: pinned ? [] : ["Map not pinned to GPS: A may be off by ~10 m. Use I'm here before flying."],
+        buildings_source: `splat:${S.scene}`, warnings: [...(pinned ? [] : ["Map not pinned to GPS: A may be off by ~10 m. Use I'm here before flying."]), ...warn],
       };
       return { mission, m, pinned };
     }
   }
   // Saves the mission on cradle (the record + what Flight Lab's "Load latest" reads); in the app it also loads it on the drone.
-  async function sendMission() {
-    const { mission, m, pinned } = await buildMission();
+  async function sendMission(opts) {
+    const { mission, m, pinned } = await buildMission(opts);
     const r = await j('/api/missions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(mission) });
     mission.saved_name = r.name;
     if (APP) { const err = FL.load(JSON.stringify(mission)); if (err) throw new Error(err); }
     const where = APP ? 'Loaded on the drone. Put it on A, then Fly → Fly for real.' : 'On the Android phone: Flight Lab → Load latest mission → put the drone on A → Start.';
-    say(`Sent: ${r.name}\n${where}\nReal-flight margin: ${m.base} m at A, growing ${m.rate} m per metre (${mission.alignment.max_margin_m} m at the farthest point).${pinned ? '' : '\nWarning: ' + mission.warnings[0]}`, pinned ? 'ok' : '');
+    say(`Sent: ${r.name}\n${where}\n${mission.path_mode === 'drawn' ? 'Path: as drawn (no clearance checks).' : mission.path_mode !== 'strict' ? 'Path: planned.' : `Real-flight margin: ${m.base} m at A, growing ${m.rate} m per metre (${mission.alignment.max_margin_m} m at the farthest point).`}${mission.warnings.length ? '\nWarning: ' + mission.warnings.join(' ') : ''}`, mission.warnings.length ? '' : 'ok');
     return { mission, pinned };
   }
-  $('sendBtn').onclick = async () => { say('Planning with the real-flight margin'); try { await sendMission(); } catch (e) { say(`Send failed: ${e.message}`, 'bad'); } };
+  $('realPath').value = store.get('realPath') || 'planned';
+  $('realPath').addEventListener('change', () => invalidate());
+  $('realPath').onchange = () => store.set('realPath', $('realPath').value);
+  $('sendBtn').onclick = async () => { say('Building the real flight'); try { await sendMission(); } catch (e) { say(`Send failed: ${e.message}`, 'bad'); } };
 
   // ================= library: routes, races and places, per splat (saved on cradle) =================
   S.lib = { routes: [], places: [], races: [] };
@@ -929,7 +1076,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     const row = (kind, x, meta, btns) => `<li><div class="nm"><b>${esc(x.name)}</b><small>${meta}</small></div>${btns}<button class="x" data-k="${kind}" data-s="${x.slug}" data-a="del" aria-label="Delete"><svg class="i"><use href="#i-x"/></svg></button></li>`;
     const B = (kind, x, a, label, primary) => `<button class="btn${primary ? ' primary' : ''}" data-k="${kind}" data-s="${x.slug}" data-a="${a}">${label}</button>`;
     const races = S.lib.races.filter(mine), routes = S.lib.routes.filter(mine), places = S.lib.places.filter(mine);
-    $('libRaces').innerHTML = races.map(x => row('races', x, `${x.gates} gates${x.best_s ? ` · you ${x.best_s.toFixed(2)} s` : ''}<span class="ai" data-h="${x.ai?.job || ''}"></span>`, B('races', x, 'race', 'Race', true) + (x.ai ? B('races', x, 'watch', 'Watch AI') : '') + B('races', x, 'train', x.ai ? 'Retrain AI' : 'Train AI') + B('races', x, 'edit', 'Edit') + B('races', x, 'rename', 'Rename'))).join('') || '<li class="note">No races yet. New race drops you into the splat to place gates</li>';
+    $('libRaces').innerHTML = races.map(x => row('races', x, `${x.gates} gates${x.best_s ? ` · you ${x.best_s.toFixed(2)} s` : ''}<span class="ai" data-h="${x.ai?.job || ''}"></span>`, B('races', x, 'race', 'Race', true) + B('races', x, 'plan', 'Map') + (x.ai ? B('races', x, 'watch', 'Watch AI') : '') + B('races', x, 'train', x.ai ? 'Retrain AI' : 'Train AI') + B('races', x, 'edit', 'Edit') + B('races', x, 'rename', 'Rename'))).join('') || '<li class="note">No races yet. New race drops you into the splat to place gates</li>';
     $('libRoutes').innerHTML = routes.map(x => row('routes', x, `${x.points} points`, B('routes', x, 'open', 'Open', true) + B('routes', x, 'rename', 'Rename'))).join('') || '<li class="note">No saved routes for this splat</li>';
     $('libPlaces').innerHTML = places.map(x => row('places', x, x.kind === 'look' ? 'look-at' : 'waypoint', B('places', x, 'add', 'Add to route') + B('places', x, 'rename', 'Rename'))).join('') || '<li class="note">No saved places for this splat</li>';
     $('library').querySelectorAll('ul.rows button[data-a]').forEach(b => b.onclick = () => libAction(b.dataset.k, b.dataset.s, b.dataset.a));
@@ -963,6 +1110,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
         return loadLib();
       }
       if (kind === 'routes') {
+        S.realRace = null;
         S.pts = x.pts.map(p => ({ ...p })); S.pois = (x.pois || []).map(p => ({ ...p }));
         if (x.loop != null) $('loop').checked = x.loop; if (x.style) $('style').value = x.style; if (x.speed) $('speed').value = String(x.speed);
         S.lastRouteName = x.name; S.sel = null; S.view = null; await show('plan'); invalidate(); say(`Opened ${x.name}.`, 'ok');
@@ -979,6 +1127,15 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
             await post('races', { ...x, ai: { job: r.job, course_hash: r.course_hash } });
             return loadLib();
           } catch (e) { return alert(e.message.includes('running') ? 'The AI is already training another course; try again when it finishes.' : `Couldn't start training: ${e.message}`); }
+        }
+        if (action === 'plan') return openRaceInPlan();
+        if (S.real && action !== 'edit') {
+          S.realRace = S.race; await show('fly');
+          const key = S.race.ai?.course_hash || (S.race.slug && !S.race.edited ? S.race.slug : null);
+          let g = null; if (key) try { g = await j(`/sim/api/sim/race/ghost?course=${encodeURIComponent(key)}`); } catch {}
+          S.realRace.ghost = g?.traj?.length ? g : null;
+          toast(`Real race: ${S.race.name} · ${S.race.gates.length} gates${S.realRace.ghost ? ` · AI lap ${g.time_s.toFixed(1)} s` : ' · no AI lap yet'}`);
+          return;
         }
         if (action === 'edit') await enterPlace('race'); else if (action === 'watch') await watchAi(); else await startRace();
       }
@@ -1038,10 +1195,10 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       const L = Math.hypot(dx0, dy0) || 1, dx = dx0 / L * 4, dy = dy0 / L * 4;
       const d = await j('/sim/api/sim/fly', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene: S.scene, a, b: { x: a.x + dx, y: a.y + dy, alt: a.alt }, via: [], alt_m: a.alt, speed_mps: 2, clear_m: 0.8, takeoff_land: false }) });
       if (d.ok) {
-        await fetch(`/sim/replay?sid=${SID}&id=${d.id}&cam=fpv`); await fetch(`/sim/replay?sid=${SID}&id=${d.id}&t=0`);
+        await simFetch(`/sim/replay?sid=${SID}&id=${d.id}&cam=fpv`); await simFetch(`/sim/replay?sid=${SID}&id=${d.id}&t=0`);
         // The session only adopts the replay pose when a frame is rendered, so draw one before taking the sticks.
         await (await fetch(`/sim/frame?sid=${SID}&f=0&r=0&u=0&y=0&view=sim&pitch=-10&noclip=0&cam=fpv`)).arrayBuffer();
-        await fetch(`/sim/mode?sid=${SID}&mode=manual`); return true;
+        await simFetch(`/sim/mode?sid=${SID}&mode=manual`); return true;
       }
     }
     return false;
@@ -1049,6 +1206,19 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   function raceStartPose() {
     const g = S.race.gates[0], h = g.yaw_deg * D2R;
     return { a: { x: +(g.x - 4 * Math.cos(h)).toFixed(2), y: +(g.y - 4 * Math.sin(h)).toFixed(2), alt: +g.z.toFixed(1) }, toward: { x: g.x, y: g.y } };
+  }
+  // A race on the 2D map: its gates, the AI's line (orange, dashed) and a route through the gate centres
+  // (A = the start spot 4 m before gate 1). The route is an ordinary route: edit it, save it, fly it.
+  async function openRaceInPlan() {
+    const R = S.race; if (!R?.gates?.length) return;
+    const { a } = raceStartPose();
+    S.realRace = null; S.pois = []; $('loop').checked = false; S.sel = null; S.view = null;
+    S.pts = [{ x: a.x, y: a.y, alt: Math.max(3, +a.alt.toFixed(1)) }, ...R.gates.map(gt => ({ x: +gt.x.toFixed(2), y: +gt.y.toFixed(2), alt: Math.max(3, +gt.z.toFixed(1)) }))];
+    S.lastRouteName = `${R.name} gates`;
+    await show('plan'); invalidate(true);
+    const key = R.ai?.course_hash || (R.slug && !R.edited ? R.slug : null);
+    if (key) j(`/sim/api/sim/race/ghost?course=${encodeURIComponent(key)}`).then(gh => { if (S.race === R && gh?.traj?.length) { R.ghostLine = gh.traj; R.ghostTime = gh.time_s; drawMap(); say(`${R.name}: ${R.gates.length} gates as waypoints. Orange dashed line = the AI's ${gh.time_s.toFixed(1)} s lap.`, 'ok'); } }).catch(() => {});
+    say(`${R.name}: ${R.gates.length} gates as waypoints (A is the start, 4 m before gate 1). Edit, save or fly it like any route.`, 'ok');
   }
   async function startRace() {
     if (!S.race || S.race.gates.length < 2) return alert('This race needs at least two gates.');
@@ -1071,7 +1241,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   $('raceBtn').onclick = () => { if (S.watch) { S.watch = null; S.mode = 'idle'; } startRace(); };
   $('raceExit').onclick = () => {
     const watching = !!S.watch; S.run = null; S.watch = null; $('raceBtn').hidden = true; $('raceExit').hidden = true;
-    if (watching) { S.mode = 'idle'; fetch(`/sim/mode?sid=${SID}&mode=manual`); }
+    if (watching) { S.mode = 'idle'; simFetch(`/sim/mode?sid=${SID}&mode=manual`); }
     flashToast(watching ? 'Stopped watching' : 'Race closed');
   };
 
@@ -1079,7 +1249,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   async function watchAi() {
     const key = S.race?.ai?.course_hash || S.race?.slug; if (!key) return alert('Train the AI on this race first.');
     let g; try { g = await j(`/sim/api/sim/race/ghost?course=${encodeURIComponent(key)}`); } catch (e) { return alert(`No AI lap yet: ${e.message}`); }
-    const r = await fetch(`/sim/replay?sid=${SID}&ghost=${encodeURIComponent(key)}`);
+    const r = await simFetch(`/sim/replay?sid=${SID}&ghost=${encodeURIComponent(key)}`);
     if (!r.ok) return alert(`Couldn't start the replay: ${await r.text()}`);
     if (S.placing) setPlacingUi(false);
     S.run = null; S.active = null; S.mode = 'watch'; S.cam = 'fpv'; $('camBtn').textContent = 'First person';
@@ -1233,7 +1403,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   function pad(el, onMove) {
     const knob = el.querySelector('i'); let id = null;
     const set = e => { const r = el.getBoundingClientRect(), R = r.width / 2; let x = (e.clientX - r.left - R) / R, y = (e.clientY - r.top - R) / R; const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; } knob.style.transform = `translate(${x * R * .62}px, ${y * R * .62}px)`; onMove(x, -y); };
-    el.addEventListener('pointerdown', e => { id = e.pointerId; try { el.setPointerCapture(id); } catch {} set(e); if (S.mode === 'flying' || S.mode === 'paused') takeover(); else if (S.mode === 'idle' || S.mode === 'done') { S.mode = 'manual'; fetch(`/sim/mode?sid=${SID}&mode=manual`); } });
+    el.addEventListener('pointerdown', e => { id = e.pointerId; try { el.setPointerCapture(id); } catch {} set(e); if (S.mode === 'flying' || S.mode === 'paused') takeover(); else if (S.mode === 'idle' || S.mode === 'done') { S.mode = 'manual'; simFetch(`/sim/mode?sid=${SID}&mode=manual`); } });
     el.addEventListener('pointermove', e => { if (e.pointerId === id) set(e); });
     const end = e => { if (e.pointerId !== id) return; id = null; knob.style.transform = ''; onMove(0, 0); };
     el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
@@ -1256,24 +1426,44 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   // Two frame requests in flight hide the network round trip (the viewer serialises them per GPU and
   // steps each by the wall time since the last, so the sim keeps real-time pace). Newest result wins.
   let frameSeq = 0, frameShown = 0;
+  // A hit: in Solid mode the edge glow + buzz; passing through just a faint glow so it doesn't nag.
+  function hitFx() {
+    const solid = S.obs === 'solid';
+    $('flash').style.opacity = solid ? 1 : 0.35; setTimeout(() => $('flash').style.opacity = 0, solid ? 300 : 200);
+    if (solid) navigator.vibrate?.(120);
+  }
   async function videoLoop(worker = 0) {
     for (;;) {
       if (!S.scene || document.hidden) { await new Promise(r => setTimeout(r, 300)); continue; }
       if (worker > 0 && (S.real || S.screen !== 'fly')) { await new Promise(r => setTimeout(r, 300)); continue; }
       if (S.real) { try { realTick(); render(); } catch (e) { console.warn('real tick', e); } await new Promise(r => setTimeout(r, 200)); continue; }
+      const local = localOn();
+      $('gl').hidden = !local; $('video').style.visibility = local ? 'hidden' : '';
+      if (local) {
+        if (worker > 0) { await new Promise(r => setTimeout(r, 300)); continue; }
+        try {
+          const st = S.local.frame(S.mode === 'manual' ? S.sticks : [0, 0, 0, 0], { pitch: S.placing && S.mode === 'manual' ? S.tilt : -10, cam: S.placing ? 'fpv' : S.cam, noclip: S.obs !== 'solid' });
+          if (S.st && st.collisions > S.st.collisions) hitFx();
+          S.st = st; raceStep(st);
+          if (S.mode === 'flying' && st.replay && st.replay.t >= st.replay.duration - 0.05) { S.mode = 'done'; simFetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${st.replay.duration}`); }
+        } catch (e) { console.warn('local frame', e); }
+        render();
+        await new Promise(r => S.screen === 'fly' ? requestAnimationFrame(r) : setTimeout(r, 250));
+        continue;
+      }
       try {
         const [f, r, u, y] = S.mode === 'manual' ? S.sticks : [0, 0, 0, 0];
         const mySeq = ++frameSeq;
-        const res = await fetch(`/sim/frame?sid=${SID}&f=${f.toFixed(2)}&r=${r.toFixed(2)}&u=${u.toFixed(2)}&y=${y.toFixed(2)}&view=hd&pitch=${S.placing && S.mode === 'manual' ? S.tilt : -10}&noclip=0&cam=${S.placing ? 'fpv' : S.cam}${S.gatesKey && (S.run || S.watch || (S.placing && S.kind === 'race')) ? `&gates=${encodeURIComponent(S.gatesKey)}&next=${S.run ? S.run.next : S.watch ? watchNext() : (S.race?.gates.length || 0)}` : ''}`);
+        const res = await fetch(`/sim/frame?sid=${SID}&f=${f.toFixed(2)}&r=${r.toFixed(2)}&u=${u.toFixed(2)}&y=${y.toFixed(2)}&view=hd&pitch=${S.placing && S.mode === 'manual' ? S.tilt : -10}&noclip=${S.obs === 'solid' ? 0 : 1}&cam=${S.placing ? 'fpv' : S.cam}${S.gatesKey && (S.run || S.watch || (S.placing && S.kind === 'race')) ? `&gates=${encodeURIComponent(S.gatesKey)}&next=${S.run ? S.run.next : S.watch ? watchNext() : (S.race?.gates.length || 0)}` : ''}`);
         if (res.ok && mySeq < frameShown) { await res.arrayBuffer(); continue; }   // an older frame finished after a newer one
         if (res.ok) {
           frameShown = mySeq;
           const st = JSON.parse(res.headers.get('X-State') || '{}');
-          if (S.st && st.collisions > S.st.collisions) { $('flash').style.opacity = 1; setTimeout(() => $('flash').style.opacity = 0, 300); navigator.vibrate?.(120); }
+          if (S.st && st.collisions > S.st.collisions) hitFx();
           S.st = st; raceStep(st);
           const blob = await res.blob();
           if (S.screen === 'fly') { const url = URL.createObjectURL(blob), old = $('video').src; $('video').src = url; if (old.startsWith('blob:')) URL.revokeObjectURL(old); }
-          if (S.mode === 'flying' && st.replay && st.replay.t >= st.replay.duration - 0.05) { S.mode = 'done'; fetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${st.replay.duration}`); }
+          if (S.mode === 'flying' && st.replay && st.replay.t >= st.replay.duration - 0.05) { S.mode = 'done'; simFetch(`/sim/replay?sid=${SID}&id=${S.active.id}&t=${st.replay.duration}`); }
         }
       } catch {}
       render();
@@ -1334,6 +1524,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     } else S.st = null;
   }
   const REAL_TXT = {
+    FOLLOW: ['Following you', 'var(--accent)'],
     IDLE: ['Real drone · plan a route, then Fly for real', 'var(--t3)'], LOADED: ['Mission loaded · put the drone on A', 'var(--t2)'],
     TAKEOFF: ['Taking off', 'var(--accent)'], ARMING: ['Taking control', 'var(--accent)'], FLYING: ['Autopilot · RC sticks take over', 'var(--accent)'],
     POLICY: ['Obstacle · learned policy is flying', 'var(--warn)'], PAUSED: ['Paused · hovering', 'var(--warn)'], HOLD: ['Holding', 'var(--warn)'],
@@ -1344,6 +1535,9 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     const d = S.ds || {}, st = d.state || 'IDLE';
     let [text, color] = !d.registered ? [sdkWhy(d), 'var(--warn)'] : !d.connected ? ['No drone · connect the RC and power on', 'var(--t3)'] : REAL_TXT[st] || [st, 'var(--t2)'];
     if (st === 'HOLD' && d.hold) text = `Holding · ${d.hold}`;
+    if (st === 'FOLLOW' && d.follow?.info) text = d.follow.info;
+    $('followBtn').classList.toggle('on', st === 'FOLLOW' || !!d.follow?.on); $('followBtn').textContent = (st === 'FOLLOW' || d.follow?.on) ? 'Stop follow' : 'Follow';
+    if (S.realRace && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && d.connected && d.registered) text = `Real race · ${S.realRace.name} · ${S.realRace.gates.length} gates`;
     if (d.latched && !['MANUAL'].includes(st)) [text, color] = [`RC override · ${d.latch_reason || 'sticks moved'}`, 'var(--bad)'];
     if (d.pilot?.mode === 'shadow' && d.pilot.want && d.pilot.want !== 'mission' && st === 'FLYING') text = 'Shadow · the policy would take over here';
     if (!(S.toastUntil > Date.now())) $('status').querySelector('.txt').textContent = text; $('status').querySelector('.dot').style.background = color;
@@ -1351,11 +1545,13 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     $('hud').style.color = '';
     const flying = ['FLYING', 'POLICY'].includes(st), held = ['PAUSED', 'HOLD'].includes(st);
     const pi = held ? 'play' : 'pause'; if ($('pauseBtn').dataset.i !== pi) { $('pauseBtn').dataset.i = pi; $('pauseBtn').innerHTML = `<svg class="i"><use href="#i-${pi}"/></svg>`; } $('pauseBtn').disabled = !(flying || held);
+    $('aiLineBtn').hidden = !(S.realRace?.ghost && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && d.connected);
+    $('recBtn').classList.toggle('on', !!d.capturing); $('recBtn').textContent = d.capturing ? 'Stop rec' : 'Rec';
     const big = $('bigBtn');
     if (d.landing_confirm) { big.hidden = false; big.textContent = 'Confirm landing'; big.onclick = () => FL.confirmLanding(); }
     else if (st === 'MANUAL') { big.hidden = false; big.textContent = 'Re-arm and continue'; big.onclick = () => FL.rearm(); }
     else if (d.latched) { big.hidden = false; big.textContent = 'Re-arm'; big.onclick = () => FL.rearm(); }
-    else if (['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && S.pts.length > 1 && d.connected) { big.hidden = false; big.textContent = 'Fly for real'; big.onclick = flyReal; }
+    else if (['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && (S.pts.length > 1 || S.realRace) && d.connected) { big.hidden = false; big.textContent = S.realRace ? 'Race for real' : 'Fly for real'; big.onclick = () => flyReal(false); }
     else big.hidden = true;
     if (S.screen === 'fly') { drawMini(); $('ov').getContext('2d').clearRect(0, 0, $('ov').width, $('ov').height); } else if (S.screen === 'plan') drawMap();
   }
@@ -1370,15 +1566,73 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     if (!d.connected) return 'SDK ready · no drone. Close DJI Fly, power on the drone, replug the RC';
     return `Connected · ${d.battery >= 0 ? d.battery + '%' : '--'} · ${d.sats >= 0 ? d.sats : '--'} sats · ${String(d.state).toLowerCase()}${S.real ? '' : ' · switch to Real drone to fly it'}`;
   }
-  async function flyReal() {
+  // A race on the real drone: from where the drone sits, straight through each gate along its heading
+  // (2.5 m lead-in and run-out at the gate's height), then land after the last gate.
+  async function realRaceMission(d) {
+    const R = S.realRace;
+    if (!hasGeo() || !S.calib) throw new Error("This scene has no GPS alignment.");
+    if (!(d.sats >= 6) || !isFinite(d.lat)) throw new Error("Waiting for the drone's GPS fix.");
+    const [ax, ay] = llToScene(d.lat, d.lon), lift = z => Math.max(2.5, +z.toFixed(1));
+    const pts = [{ x: +ax.toFixed(2), y: +ay.toFixed(2), alt: lift(R.gates[0].z) }];
+    let low = 0;
+    for (const g of R.gates) {
+      const h = g.yaw_deg * D2R, cx = Math.cos(h), cy = Math.sin(h), z = lift(g.z); if (g.z < 2.5) low++;
+      for (const k of [-2.5, 0, 2.5]) pts.push({ x: +(g.x + k * cx).toFixed(2), y: +(g.y + k * cy).toFixed(2), alt: z });
+    }
+    const save = { pts: S.pts, pois: S.pois, loop: $('loop').checked };
+    S.pts = pts; S.pois = []; $('loop').checked = false;
+    try { const res = await sendMission({ mode: 'drawn', name: `race_${R.slug || R.name || S.scene}` }); if (low) res.mission.warnings.push(`${low} gate(s) are below 2.5 m; flown at 2.5 m.`);
+      const g0 = R.gates[0], far = Math.hypot(g0.x - ax, g0.y - ay) * (S.calib.scale_corr || 1);
+      if (far > 15) res.mission.warnings.push(`The drone is ${far.toFixed(0)} m from gate 1 and flies straight there with no obstacle check. Carry it near the start for a clean line.`);
+      return res; }
+    finally { S.pts = save.pts; S.pois = save.pois; $('loop').checked = save.loop; }
+  }
+  // The trained AI's best lap as a real mission: its racing line resampled every ~1 m, its speed profile
+  // scaled so the fastest point is the AI line speed cap, heights >= 2.5 m. Clearance is checked against the
+  // splat's collision field (on-phone copy) and reported, not enforced.
+  async function realAiMission(d) {
+    const R = S.realRace, g = R.ghost, tr = g.traj;   // rows [t, x, y, z, yaw]
+    if (!hasGeo() || !S.calib) throw new Error("This scene has no GPS alignment.");
+    if (!(d.sats >= 6) || !isFinite(d.lat)) throw new Error("Waiting for the drone's GPS fix.");
+    const cap = +$('aiCap').value, lift = z => Math.max(2.5, +z.toFixed(1));
+    const vAt = i => { const a = tr[Math.max(0, i - 1)], b = tr[Math.min(tr.length - 1, i + 1)]; return b[0] > a[0] ? Math.hypot(b[1] - a[1], b[2] - a[2], b[3] - a[3]) / (b[0] - a[0]) : 0; };
+    const vmax = Math.max(...tr.map((_, i) => vAt(i))), scale = Math.min(1, cap / vmax);
+    const [ax, ay] = llToScene(d.lat, d.lon);
+    const pts = [{ x: +ax.toFixed(2), y: +ay.toFixed(2), alt: lift(tr[0][3]) }], speeds = [Math.min(cap, 3)];
+    let last = null;
+    tr.forEach((q, i) => {
+      if (last && Math.hypot(q[1] - last[1], q[2] - last[2], q[3] - last[3]) < 1.0 && i < tr.length - 1) return;
+      last = q; pts.push({ x: +q[1].toFixed(2), y: +q[2].toFixed(2), alt: lift(q[3]) }); speeds.push(+Math.max(0.8, vAt(i) * scale).toFixed(2));
+    });
+    // clearance along the line (needs the on-phone collision field for this scene)
+    let minC = null, tight = 0;
+    if (S.local?.scene === S.scene) for (const p of pts.slice(1)) { const c = S.local.esdf.query(p.x, p.y, p.alt); if (minC == null || c < minC) minC = c; if (c < 1.5) tight++; }
+    const save = { pts: S.pts, pois: S.pois, loop: $('loop').checked };
+    S.pts = pts; S.pois = []; $('loop').checked = false;
+    try {
+      const res = await sendMission({ mode: 'drawn', name: `ai_${R.slug || R.name || S.scene}`, speeds });
+      const W = res.mission.warnings;
+      W.push(`AI line: ${pts.length - 1} points, AI lap ${g.time_s.toFixed(1)} s at up to ${vmax.toFixed(1)} m/s in the sim, flown at up to ${cap} m/s (${Math.round(scale * 100)}% speed).`);
+      if (minC == null) W.push("Clearance not checked (this scene isn't loaded on the phone). The AI cuts close to things; real GPS is ±1-2 m.");
+      else if (tight) W.push(`${tight} point(s) pass within 1.5 m of obstacles in the splat (closest ${Math.max(0, minC).toFixed(1)} m). Real GPS is ±1-2 m: watch those spots.`);
+      else W.push(`Closest pass ${minC.toFixed(1)} m from obstacles in the splat.`);
+      const g0 = pts[1], far = Math.hypot(g0.x - ax, g0.y - ay) * (S.calib.scale_corr || 1);
+      if (far > 15) W.push(`The drone is ${far.toFixed(0)} m from the start of the line and flies straight there with no obstacle check.`);
+      return res;
+    } finally { S.pts = save.pts; S.pois = save.pois; $('loop').checked = save.loop; }
+  }
+  async function flyReal(aiLine) {
     const d = S.ds || {};
     if (!d.connected) return toast('No drone connected.');
-    toast('Planning with the real-flight margin');
-    let res; try { res = await sendMission(); } catch (e) { return toast(e.message); }
+    if (!S.realRace && !d.flying && S.syncADrone && !S.syncADrone(true)) return toast("A = drone is on but the drone's position isn't usable yet.");
+    if (S.realRace && d.flying) return toast('Land first: a race starts from the ground where the drone is.');
+    toast(S.realRace ? `Building the race ${S.realRace.name}` : 'Building the real flight');
+    if (aiLine && !S.realRace?.ghost) return toast('This race has no AI lap yet: train the AI on it in the sandbox first.');
+    let res; try { res = aiLine ? await realAiMission(d) : S.realRace ? await realRaceMission(d) : await sendMission(); } catch (e) { return toast(e.message); }
     const m = res.mission, km = (m.sim_preview.length_m * (m.alignment.scale_corr || 1)).toFixed(0);
     const air = S.air && !S.air.error ? S.air : null;
     if (air?.level === 'bad') return toast(`FAA: ${air.verdict}`);
-    const msg = `${air?.controlled ? `Class ${air.class} airspace: do you have a LAANC authorization for now, up to ${air.ceiling_ft} ft?\n\n` : ''}Fly "${m.saved_name}" for real?\n\n${km} m at ${m.limits.cruise_speed_mps} m/s, up to ${m.limits.ceiling_m - 5} m.${d.flying ? '' : ' It takes off from here, so the drone must be on A.'}\nObstacle AI: ${d.pilot?.mode}. Handoff: ${m.obstacle_handoff}.${res.pinned ? '' : '\n\nThe map is not pinned to GPS here: use I\'m here first or A may be ~10 m off.'}\n\nAny RC stick movement takes over instantly.`;
+    const msg = `${air?.controlled ? `Class ${air.class} airspace: do you have a LAANC authorization for now, up to ${air.ceiling_ft} ft?\n\n` : ''}${aiLine ? `Fly the AI's line through "${S.realRace.name}"` : S.realRace ? `Race "${S.realRace.name}" (${S.realRace.gates.length} gates)` : `Fly "${m.saved_name}"`} for real?\n\n${km} m at ${m.limits.cruise_speed_mps} m/s, up to ${m.limits.ceiling_m - 5} m.${d.flying ? '' : ' It takes off from here, so the drone must be on A.'}\nObstacle AI: ${d.pilot?.mode}. Handoff: ${m.obstacle_handoff}.${m.path_mode === 'drawn' ? '\nPath: as drawn, no clearance checks.' : ''}${m.warnings.filter(w => !w.startsWith('Map not pinned')).map(w => '\n' + w).join('')}${res.pinned ? '' : '\n\nThe map is not pinned to GPS here: use I\'m here first or A may be ~10 m off.'}\n\nAny RC stick movement takes over instantly.`;
     if (!confirm(msg)) return;
     FL.start();
   }
@@ -1396,7 +1650,28 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     $('stopBtn').onclick = () => FL.abort();
     const oldPause = $('pauseBtn').onclick; $('pauseBtn').onclick = () => S.real ? FL.pause() : oldPause();
     const oldGo = $('go').onclick; $('go').onclick = (...a) => { if (!S.real) return oldGo?.(...a); show('fly'); flyReal(); };
-    setInterval(() => { let d; try { d = JSON.parse(FL.status()); } catch { return; } if (S.real) S.ds = d; $('droneInfo').textContent = droneLine(d); }, 1000);
+    // "A = drone": takeoff A tracks wherever the drone is sitting, so you can park it, walk off, and plan from anywhere.
+    const aDroneOn = () => store.get('aDrone') === '1';
+    $('aDrone').hidden = false; $('aDrone').classList.toggle('on', aDroneOn());
+    function syncADrone(d, loud) {
+      if (!d || !d.connected || d.flying || !(d.sats >= 6) || !isFinite(d.lat) || !isFinite(d.lon) || (d.lat === 0 && d.lon === 0)) {
+        if (loud) say(!d?.connected ? 'No drone connected.' : d.flying ? "The drone is flying; A stays where it took off." : 'Waiting for the drone\'s GPS fix (6+ satellites).', 'bad');
+        return false;
+      }
+      if (!hasGeo() || !S.calib) { if (loud) say("This scene has no GPS alignment.", 'bad'); return false; }
+      const [x, y] = llToScene(d.lat, d.lon), A = S.pts[0];
+      if (A && Math.hypot(A.x - x, A.y - y) < 0.5) return true;
+      const a = { x: +x.toFixed(2), y: +y.toFixed(2), alt: A?.alt ?? alt() };
+      if (S.pts.length) S.pts[0] = a; else S.pts.push(a);
+      invalidate(true); if (loud) say(`A follows the drone (${d.sats} sats).`, 'ok');
+      return true;
+    }
+    S.syncADrone = loud => !aDroneOn() || syncADrone(S.dsAll, loud);
+    $('aDrone').onclick = () => {
+      const on = !aDroneOn(); store.set('aDrone', on ? '1' : '0'); $('aDrone').classList.toggle('on', on);
+      if (on) syncADrone(S.dsAll, true); else say('A is fixed again; drag it or tap A at me.');
+    };
+    setInterval(() => { let d; try { d = JSON.parse(FL.status()); } catch { return; } S.dsAll = d; if (S.real) S.ds = d; $('droneInfo').textContent = droneLine(d); if (aDroneOn()) syncADrone(d, false); }, 1000);
     $('diagBtn').onclick = () => FL.diagnostics();
     window.flMessage = t => toast(t);
     window.flBack = () => { if (S.placing) $('placeDone').click(); else if (S.screen !== 'fly') show('fly'); };
@@ -1404,6 +1679,101 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   }
 
   setLayer('h', S.layers.h); setLayer('faa', S.layers.faa); syncSpeed();
+  // ================= videos: recordings on this phone + the library on cradle =================
+  const MB = b => b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : Math.round(b / 1e6) + ' MB';
+  const stampDate = s => `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)} ${s.slice(9, 11)}:${s.slice(11, 13)}`;
+  let vTimer = null;
+  async function loadVideos() {
+    clearTimeout(vTimer);
+    if (S.screen !== 'videos') return;
+    if (APP && window.FL?.recordings) renderPhoneVideos();
+    try { S.videos = await j('/api/videos'); renderCradleVideos(); } catch (e) { $('vGrid').innerHTML = `<p class="hint">Couldn't load videos: ${esc(e.message)}</p>`; }
+    vTimer = setTimeout(loadVideos, 5000);   // previews, uploads and splat jobs progress in the background
+  }
+  function renderPhoneVideos() {
+    $('vPhoneCol').hidden = false;
+    let recs = [], st = {}; try { recs = JSON.parse(FL.recordings()); st = JSON.parse(FL.storage()); } catch {}
+    if (st.total) { $('vStore').textContent = `${MB(st.used)} of videos · ${MB(st.free)} free`; $('vMeter').style.width = Math.min(100, 100 * (1 - st.free / st.total)) + '%'; }
+    if (st.auto_delete != null) $('vAuto').checked = st.auto_delete;
+    const up = FL.uploadStatus?.() || '';
+    $('vPhone').innerHTML = recs.length ? recs.map(r => `<li><div class="nm"><b>${stampDate(r.stamp)}</b><small>${r.video_bytes ? MB(r.video_bytes) + ' video' : 'logs only'} · ${MB(r.bytes)} total${r.recording ? ' · recording' : r.uploading ? ' · uploading' : r.uploaded ? ' · on cradle' : ''}</small></div>
+      ${r.recording ? '' : r.uploaded ? '' : `<button class="btn primary" data-up="${r.stamp}" ${r.uploading ? 'disabled' : ''}>Upload</button>`}
+      ${r.recording || r.uploading ? '' : `<button class="btn" data-del="${r.stamp}">Delete</button>`}</li>`).join('') + (up ? `<li class="note">${esc(up)}</li>` : '')
+      : '<li class="note" style="padding:12px 16px;color:var(--t3)">Nothing stored on the phone.</li>';
+    $('vPhone').querySelectorAll('[data-up]').forEach(b => b.onclick = () => { const e = FL.uploadRecording(b.dataset.up); if (e) alert(e); else { flashToast('Uploading to cradle'); setTimeout(loadVideos, 800); } });
+    $('vPhone').querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+      const r = recs.find(x => x.stamp === b.dataset.del);
+      if (!confirm(`Delete the ${stampDate(r.stamp)} recording from this phone (${MB(r.bytes)})?${r.uploaded ? '' : '\n\nIt has NOT been uploaded to cradle.'}`)) return;
+      const e = FL.deleteRecording(r.stamp); if (e) alert(e); loadVideos();
+    });
+  }
+  $('vAuto').onchange = () => FL?.setAutoDelete?.($('vAuto').checked);
+  $('vRefresh').onclick = () => loadVideos();
+  function vTitle(v) { return v.title || `${v.source === 'drone' ? (v.file.startsWith('flightlab_') ? 'Drone stream' : 'Drone 4K') : 'Phone'} · ${v.date}`; }
+  function splatBadges(v) {
+    return (v.splats || []).map(sp => `<span class="badge ${sp.state === 'done' ? 'done' : sp.state === 'failed' ? 'failed' : ''}">Splat ${esc(sp.name)} · ${esc(sp.state === 'done' ? 'ready' : sp.state)}${sp.progress > 0 && sp.state === 'running' ? ' ' + Math.round(sp.progress * 100) + '%' : ''}</span>`).join('');
+  }
+  function renderCradleVideos() {
+    const vs = S.videos || [];
+    $('vGrid').innerHTML = vs.length ? vs.map(v => `<div class="vcard" data-v="${v.id}"><div class="th" style="background-image:url('/api/videos/${v.id}/thumb.jpg')">${v.duration ? `<span>${Math.floor(v.duration / 60)}:${String(Math.round(v.duration % 60)).padStart(2, '0')}</span>` : ''}</div>
+      <div class="bd"><b>${esc(vTitle(v))}</b><small>${v.date} · ${MB(v.size)}${v.width ? ` · ${v.width}×${v.height}` : ''}${v.telemetry ? ' · flight log' : ''}</small><div>${splatBadges(v)}</div></div></div>`).join('')
+      : '<p class="hint" style="margin:12px 16px">No videos on cradle yet. Record on the Fly screen, then Upload.</p>';
+    $('vGrid').querySelectorAll('.vcard').forEach(c => c.onclick = () => openPlayer(c.dataset.v));
+    if (S.player) { const v = vs.find(x => x.id === S.player); if (v) $('pJobs').innerHTML = playerJobs(v); }
+  }
+  function playerJobs(v) {
+    return (v.splats || []).map(sp => `<div class="set" style="padding:6px 0"><span>${esc(sp.name)}<small>${esc(sp.method === 'local' ? 'Cradle GPU' : 'World Labs')} · ${esc(sp.state)}${sp.message ? ' · ' + esc(sp.message) : ''}</small></span>${sp.state === 'done' && sp.scene ? `<button class="btn" data-fly="${esc(sp.scene)}">Fly it</button>` : ''}</div>`).join('');
+  }
+  async function openPlayer(id) {
+    const v = (S.videos || []).find(x => x.id === id); if (!v) return;
+    S.player = id; $('player').hidden = false;
+    $('pWhen').textContent = vTitle(v); $('pTitle').value = v.title || '';
+    $('pInfo').textContent = `${v.file} · ${MB(v.size)}${v.duration ? ` · ${Math.round(v.duration)} s` : ''}`;
+    $('pSplat').value = (v.title || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    $('pJobs').innerHTML = playerJobs(v);
+    const tryPlay = async () => {
+      if (S.player !== id) return;
+      const r = await fetch(`/api/videos/${id}/play.mp4`, { headers: { Range: 'bytes=0-0' } }).catch(() => null);
+      if (r && (r.status === 206 || r.status === 200)) { $('pPrep').hidden = true; $('pVideo').hidden = false; $('pVideo').src = `/api/videos/${id}/play.mp4`; }
+      else { $('pVideo').hidden = true; $('pPrep').hidden = false; setTimeout(tryPlay, 3000); }
+    };
+    tryPlay();
+  }
+  $('pClose').onclick = () => { S.player = null; $('pVideo').pause(); $('pVideo').removeAttribute('src'); $('pVideo').load(); $('player').hidden = true; };
+  $('pTitle').onchange = async () => { if (!S.player) return; await j(`/api/videos/${S.player}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: $('pTitle').value.trim() }) }).catch(() => {}); $('pWhen').textContent = $('pTitle').value.trim() || $('pWhen').textContent; loadVideos(); };
+  $('pMethod').querySelectorAll('button').forEach(b => b.onclick = () => $('pMethod').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)));
+  $('pGo').onclick = async () => {
+    const name = $('pSplat').value.trim(); if (!name) return alert('Name the splat first.');
+    const method = $('pMethod').querySelector('.on').dataset.v;
+    if (!confirm(`Make splat "${name}" from this video with ${method === 'local' ? 'cradle\'s GPU (free, 15-40 min)' : 'World Labs (about $5)'}?`)) return;
+    try { await j(`/api/videos/${S.player}/splat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, method }) }); flashToast(`Splat ${name} requested`); loadVideos(); }
+    catch (e) { alert(`Couldn't request it: ${e.message}`); }
+  };
+  $('pJobs').onclick = async e => {
+    const b = e.target.closest('[data-fly]'); if (!b) return;
+    $('pClose').click();
+    const nm = b.dataset.fly;
+    if (!S.scenes.some(s => s.name === nm)) { try { const d = await j('/sim/api/sim/scenes'); const sc = (Array.isArray(d) ? d : d.scenes).find(s => s.name === nm); if (sc) S.scenes.push(sc); } catch {} }
+    if (![...$('scene').options].some(o => o.value === nm)) $('scene').add(new Option(nm, nm));
+    $('scene').value = nm; await pickScene(nm); await show('fly');
+  };
+  // Rec (real drone): stream + logs + SD 4K
+  if (APP) {
+    $('aiLineBtn').onclick = () => flyReal(true);
+    { const v = store.get('aiCap'); if (v) $('aiCap').value = v; $('aiCap').onchange = () => store.set('aiCap', $('aiCap').value); }
+    for (const id of ['followDist', 'followHt']) { const v = store.get(id); if (v) $(id).value = v; $(id).onchange = () => store.set(id, $(id).value); }
+    $('followBtn').onclick = () => {
+      const d = S.ds || {};
+      if (d.state === 'FOLLOW' || d.follow?.on) { FL.stopFollow(); return; }
+      if (!d.connected) return toast('No drone connected.');
+      if (d.follow && !(d.follow.phone_acc <= 20 && d.follow.phone_age_s < 3)) return toast(`Phone GPS isn't ready (${isFinite(d.follow.phone_acc) ? '±' + Math.round(d.follow.phone_acc) + ' m' : 'no fix'}). Go outside and allow location.`);
+      const dist = +$('followDist').value, ht = +$('followHt').value;
+      if (!confirm(`Follow me at ${dist} m, ${ht} m up?\n\n${d.flying ? '' : 'It takes off first. '}The Mini 3 has no obstacle sensors: only use this in the open, away from trees and wires. It keeps its nose and camera on you, stays within 150 m of where it started, and hovers if the phone loses GPS.\n\nAny RC stick movement takes over instantly.`)) return;
+      FL.follow(dist, ht);
+    };
+  }
+  if (APP) $('recBtn').onclick = () => { const on = !(S.ds?.capturing); FL.capture(on); flashToast(on ? 'Recording' : 'Saved to the phone · Videos to upload'); };
+
   init(); videoLoop(0); setTimeout(() => videoLoop(1), 120);
 })();
 </script>

@@ -14,3 +14,5 @@ planner/.circleback/
 *.apk
 .DS_Store
 __pycache__/
+planner/phone/
+planner/videos/
