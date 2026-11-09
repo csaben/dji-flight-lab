@@ -181,7 +181,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         seg = 0; progressM = 0.0; cmdE = 0.0; cmdN = 0.0; activePoi = -1; lastGimbalPitch = Double.NaN; gimbalSmooth = Double.NaN; yawRateCmd = 0.0
         if (ctl.logFile == null) ctl.startLogging()
         // Every mission also records the full stream + 50 Hz telemetry (+ SD 4K) for the data flywheel.
-        if (!ctl.capturing) ctl.startCapture(recordSd = false)   // SD 4K starts once airborne (see ARMING)
+        if (ctl.autoRecord && !ctl.capturing) ctl.startCapture(recordSd = false)   // SD 4K starts once airborne (see ARMING)
         pilot?.let { if (it.mode != PilotLink.Mode.OFF) it.connect(m.text) }
         ctl.event("mission_start ${m.name} origin=$lat0,$lon0 home_offset_m=$homeOffsetM pts=${path.size}")
         if (!homeOffsetM.isNaN() && homeOffsetM > HOME_WARN_M) onMessage("Warning: you're ${"%.0f".format(homeOffsetM)} m from the planned A. The route is flown relative to here.")
@@ -277,7 +277,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     }
 
     private fun arm() {
-        if (ctl.flying) ctl.startSdRecord()
+        if (ctl.flying && ctl.capturing) ctl.startSdRecord()
         setState(State.ARMING, "Handing control to the app…")
         ctl.maxHorizontal = mission?.speed ?: 3.0
         if (!(ctl.vsEnabled && ctl.advancedEnabled)) ctl.enableVirtualStick()

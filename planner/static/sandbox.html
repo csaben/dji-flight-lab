@@ -351,7 +351,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       <div class="meter"><i id="vMeter" style="width:0"></i></div>
       <ul class="group rows" id="vPhone"></ul>
       <div class="group" style="margin-top:10px"><div class="set"><span>Delete video after upload<small>Frees the phone right away; the small flight logs stay</small></span><input type="checkbox" class="switch" id="vAuto" checked></div></div>
-      <p class="hint" style="margin:10px 16px">Rec on the Fly screen (Real drone) records the drone's stream plus GPS and gimbal logs, and 4K to the drone's SD card. Recording won't start under 2 GB free and stops itself under 1 GB.</p>
+      <p class="hint" style="margin:10px 16px">Flights are only recorded when you tap Rec, or with Settings → Drone → Record every flight on. Rec on the Fly screen (Real drone) records the drone's stream plus GPS and gimbal logs, and 4K to the drone's SD card. Recording won't start under 2 GB free and stops itself under 1 GB.</p>
     </div>
     <div>
       <h3 class="hrow">On cradle<button class="btn" id="vRefresh">Refresh</button></h3>
@@ -399,6 +399,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       <h3>Drone</h3>
       <div class="group">
         <div class="set"><span>Fly screen drives<small id="droneInfo">Checking the drone</small></span><div class="seg" id="targetSeg"><button data-v="sim" class="on">Sandbox</button><button data-v="real">Real drone</button></div></div>
+        <div class="set"><span>Record every flight<small>Saves each mission and follow flight to the phone (about 40 MB a minute) plus 4K to the drone's SD card. Off: use Rec on the Fly screen when you want a recording</small></span><input type="checkbox" class="switch" id="autoRec"></div>
         <div class="set"><span>Compass<small id="compassInfo">Calibrate if the drone reports magnetic interference. Do it outdoors, away from cars, rebar and metal</small></span><button class="btn" id="compassBtn">Calibrate</button></div>
         <div class="set"><span>AI line speed cap<small>Race AI line flies the trained AI's racing line with its speed profile scaled down to this top speed</small></span><select id="aiCap"><option value="2">2 m/s</option><option value="3" selected>3 m/s</option><option value="4">4 m/s</option><option value="6">6 m/s</option><option value="8">8 m/s</option></select></div>
         <div class="set"><span>Follow me<small>Distance and height it keeps from your phone</small></span><span><select id="followDist"><option>5</option><option selected>8</option><option>12</option><option>20</option></select> m · <select id="followHt"><option>4</option><option selected>6</option><option>10</option><option>15</option></select> m up</span></div>
@@ -1796,7 +1797,8 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       SUCCEEDED: ['Calibrated', 'Done. Set the drone down on open ground. If it still reports interference, power-cycle it or move it away from metal.', 'Success'],
       FAILED: ['Calibration failed', 'Usually metal nearby (car, driveway rebar, phone in the same hand). Move to open ground and try again.', 'Failed'],
     };
-    let calOn = false;
+    let calOn = false, recSynced = false;
+    $('autoRec').onchange = () => FL.setAutoRecord?.($('autoRec').checked);
     $('compassBtn').onclick = () => {
       if (!confirm('Calibrate the compass?\n\nDo it outdoors on open ground, away from cars, the driveway and anything metal. The motors must be off. You will turn the drone through two full circles: level, then nose-down.')) return;
       const e = FL.compassCalibration(true); if (e) return alert(e);
@@ -1805,6 +1807,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     $('calCancel').onclick = () => { if (calOn && !/SUCCEEDED|FAILED/.test(S.ds?.compass?.state || '')) FL.compassCalibration(false); calOn = false; $('calib').hidden = true; };
     setInterval(() => {
       let d; try { d = JSON.parse(FL.status()); } catch { return; }
+      if (!recSynced && d.auto_record != null) { $('autoRec').checked = !!d.auto_record; recSynced = true; }
       const c = d.compass || {};
       $('compassInfo').textContent = c.error ? 'The drone reports a compass problem: calibrate it here (outdoors, away from metal)' : 'Calibrate if the drone reports magnetic interference. Do it outdoors, away from cars, rebar and metal';
       if (!calOn) return;

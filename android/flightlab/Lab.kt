@@ -49,8 +49,11 @@ object Lab {
         pilot = PilotLink(ctl, runner)
         runner.pilot = pilot
         runner.onLanded = {
-            ctl.stopCapture()
-            ctl.uploadLastSession(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
+            // Only a flight that was actually recorded gets saved and uploaded (recording is opt-in).
+            if (ctl.capturing) {
+                ctl.stopCapture()
+                ctl.uploadLastSession(java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US).format(java.util.Date()))
+            }
         }
         ctl.start()
         PhoneGps.start(app)

@@ -510,6 +510,10 @@ class FlightLabController(private val context: Context) {
 
     // ---- recordings on this phone (the app's Videos tab) ----------------------
     private val prefs get() = context.getSharedPreferences("flightlab", Context.MODE_PRIVATE)
+    /** Record every mission/follow flight (phone stream + drone SD 4K). Off by default: Rec records on demand. */
+    var autoRecord: Boolean
+        get() = prefs.getBoolean("autoRecord", false)
+        set(v) { prefs.edit().putBoolean("autoRecord", v).apply() }
     var autoDelete: Boolean
         get() = prefs.getBoolean("autoDelete", true)
         set(v) { prefs.edit().putBoolean("autoDelete", v).apply() }

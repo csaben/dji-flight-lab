@@ -314,7 +314,7 @@ class AppActivity : Activity() {
                 .put("mission", r.mission?.name ?: JSONObject.NULL).put("remaining_m", n(if (r.mission != null) r.remainingM() else Double.NaN))
                 .put("point", r.ctlLabel()).put("poi", r.activePoi).put("landing_confirm", r.landingNeedsConfirm)
                 .put("latched", c.latched).put("latch_reason", c.latchReason).put("vs", c.vsEnabled)
-                .put("capturing", c.capturing).put("upload", c.uploadStatus).put("video_packets", c.videoPackets)
+                .put("capturing", c.capturing).put("auto_record", c.autoRecord).put("upload", c.uploadStatus).put("video_packets", c.videoPackets)
                 .put("video_view", video.visibility == View.VISIBLE)
                 .put("health", org.json.JSONArray(c.healthWarnings())).put("device_status", c.deviceStatus())
                 .put("compass", JSONObject().put("state", c.compassState).put("calibrating", c.compassCalibrating).put("error", c.compassError))
@@ -354,6 +354,7 @@ class AppActivity : Activity() {
         @JavascriptInterface fun deleteRecording(stamp: String): String = if (!Lab.isReady) "The app is still starting." else Lab.ctl.deleteRecording(stamp)
         @JavascriptInterface fun uploadRecording(stamp: String): String = if (!Lab.isReady) "The app is still starting." else Lab.ctl.uploadRecording(stamp)
         @JavascriptInterface fun setAutoDelete(on: Boolean): Unit { if (Lab.isReady) Lab.ctl.autoDelete = on }
+        @JavascriptInterface fun setAutoRecord(on: Boolean): Unit { if (Lab.isReady) Lab.ctl.autoRecord = on }
         @JavascriptInterface fun capture(on: Boolean): Unit = drone { if (on) Lab.ctl.startCapture(recordSd = true) else Lab.ctl.stopCapture() }
         @JavascriptInterface fun follow(distM: Double, heightM: Double): Unit = drone { Lab.runner.startFollow(distM, heightM) }
         @JavascriptInterface fun stopFollow(): Unit = drone { Lab.runner.stopFollow() }
