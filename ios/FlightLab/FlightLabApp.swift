@@ -1,7 +1,7 @@
 import SwiftUI
 import WebKit
 
-/// Flight Lab for iPhone: the web sandbox (dji.clarksaben.com) full screen. Not signed in -> the gateway's /login page.
+/// StarSplat (Flight Lab for iPhone): the web sandbox (dji.clarksaben.com) full screen. Not signed in -> the gateway's /login page.
 /// No keys are built in; the login cookie lives in the app's own web data store.
 let home = URL(string: "https://dji.clarksaben.com/")!
 
@@ -38,7 +38,7 @@ struct Web: UIViewRepresentable {
         w.scrollView.bounces = false
         w.allowsBackForwardNavigationGestures = false
         w.customUserAgent = nil
-        w.configuration.applicationNameForUserAgent = "FlightLabiOS/1.0"
+        w.configuration.applicationNameForUserAgent = "StarSplatiOS/1.0"
         let rc = UIRefreshControl()
         rc.addTarget(context.coordinator, action: #selector(Nav.refresh(_:)), for: .valueChanged)
         w.scrollView.refreshControl = rc

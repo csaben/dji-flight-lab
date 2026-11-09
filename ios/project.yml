@@ -15,11 +15,11 @@ targets:
     sources: [FlightLab]
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.clarksaben.flightlab
-        PRODUCT_NAME: Flight Lab
+        PRODUCT_BUNDLE_IDENTIFIER: com.clarksaben.starsplat
+        PRODUCT_NAME: StarSplat
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_CFBundleDisplayName: Flight Lab
+        INFOPLIST_KEY_CFBundleDisplayName: StarSplat
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIRequiresFullScreen: YES
         INFOPLIST_KEY_UIStatusBarHidden: YES
