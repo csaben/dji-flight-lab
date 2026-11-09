@@ -29,3 +29,18 @@ targets:
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.0"
+  RCProbe:
+    type: application
+    platform: iOS
+    sources: [RCProbe]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.clarksaben.rcprobe
+        PRODUCT_NAME: RC Probe
+        TARGETED_DEVICE_FAMILY: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: RCProbe/Info.plist
+        INFOPLIST_KEY_CFBundleDisplayName: RC Probe
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        SWIFT_VERSION: "5.0"
