@@ -187,7 +187,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         if (!homeOffsetM.isNaN() && homeOffsetM > HOME_WARN_M) onMessage("Warning: you're ${"%.0f".format(homeOffsetM)} m from the planned A. The route is flown relative to here.")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off…")
-            takeoff { e -> setState(State.ABORTED, "Takeoff refused by the drone: $e. Take off with the RC and tap again (the app takes over in the air), or fix what it says.") }
+            takeoff { e -> setState(State.ABORTED, "Takeoff refused by the drone: $e. If DJI Fly is open, force-stop it (Settings → Apps → DJI Fly → Force stop), replug the RC and try again. Or take off with the RC and tap again: the app takes over in the air.") }
         }
     }
 
@@ -520,7 +520,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         ctl.event("follow_start dist=$followDist height=$followHeight")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off to follow you…")
-            takeoff { e -> following = false; setState(State.ABORTED, "Takeoff refused by the drone: $e. Take off with the RC and tap again (the app takes over in the air), or fix what it says.") }
+            takeoff { e -> following = false; setState(State.ABORTED, "Takeoff refused by the drone: $e. If DJI Fly is open, force-stop it (Settings → Apps → DJI Fly → Force stop), replug the RC and try again. Or take off with the RC and tap again: the app takes over in the air.") }
         }
     }
 
