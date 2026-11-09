@@ -317,6 +317,7 @@ class AppActivity : Activity() {
                 .put("capturing", c.capturing).put("upload", c.uploadStatus).put("video_packets", c.videoPackets)
                 .put("video_view", video.visibility == View.VISIBLE)
                 .put("health", org.json.JSONArray(c.healthWarnings())).put("device_status", c.deviceStatus())
+                .put("compass", JSONObject().put("state", c.compassState).put("calibrating", c.compassCalibrating).put("error", c.compassError))
                 .put("product_type", try { dji.sdk.keyvalue.key.ProductKey.KeyProductType.create().get()?.name ?: "" } catch (_: Throwable) { "" })
                 .put("home", try { FlightControllerKey.KeyHomeLocation.create().get()?.let { h -> JSONObject().put("lat", h.latitude).put("lon", h.longitude) } ?: JSONObject.NULL } catch (_: Throwable) { JSONObject.NULL })
                 .put("follow", JSONObject().put("on", r.following).put("info", r.followInfo)
@@ -356,6 +357,7 @@ class AppActivity : Activity() {
         @JavascriptInterface fun capture(on: Boolean): Unit = drone { if (on) Lab.ctl.startCapture(recordSd = true) else Lab.ctl.stopCapture() }
         @JavascriptInterface fun follow(distM: Double, heightM: Double): Unit = drone { Lab.runner.startFollow(distM, heightM) }
         @JavascriptInterface fun stopFollow(): Unit = drone { Lab.runner.stopFollow() }
+        @JavascriptInterface fun compassCalibration(start: Boolean): String = if (!Lab.isReady) "The DJI SDK is still starting." else if (start) Lab.ctl.startCompassCalibration() else { Lab.ctl.stopCompassCalibration(); "" }
         @JavascriptInterface fun uploadStatus(): String = if (!Lab.isReady) "" else Lab.ctl.uploadStatus
     }
 

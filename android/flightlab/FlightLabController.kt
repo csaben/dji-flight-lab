@@ -250,6 +250,15 @@ class FlightLabController(private val context: Context) {
             flightModeString = m
         }
         FlightControllerKey.KeyFCFlightMode.create().listen(this) { fcFlightMode = it?.toString() ?: "" }
+        FlightControllerKey.KeyCompassCalibrationStatus.create().listen(this) { v ->
+            val st = v?.name ?: ""
+            if (st != compassState) event("compass_cal $st")
+            compassState = st
+            if (st == "SUCCEEDED") onMessage("Compass calibrated. Power-cycle the drone if it still warns.")
+            if (st == "FAILED") onMessage("Compass calibration failed: move away from metal and try again.")
+        }
+        FlightControllerKey.KeyIsCompassCalibrating.create().listen(this) { compassCalibrating = it == true }
+        FlightControllerKey.KeyCompassHasError.create().listen(this) { compassError = it == true }
         FlightControllerKey.KeyWindWarning.create().listen(this) { v ->
             val w = v?.toString() ?: ""
             if (w != windWarning) event("wind_warning $w")
@@ -261,6 +270,22 @@ class FlightLabController(private val context: Context) {
         RemoteControllerKey.KeyStickLeftVertical.create().listen(this) { rcLV = it ?: 0; checkRc() }
         RemoteControllerKey.KeyStickRightHorizontal.create().listen(this) { rcRH = it ?: 0; checkRc() }
         RemoteControllerKey.KeyStickRightVertical.create().listen(this) { rcRV = it ?: 0; checkRc() }
+    }
+
+    // ---- compass calibration (same flow as DJI Fly: level spin, then nose-down spin) ----
+    @Volatile var compassState = ""; private set
+    @Volatile var compassError = false; private set
+    @Volatile var compassCalibrating = false; private set
+
+    fun startCompassCalibration(): String {
+        if (flying || motorsOn) return "Land and stop the motors first."
+        FlightControllerKey.KeyStartCompassCalibration.create().action({ event("compass_cal start ok") },
+            { e: IDJIError -> event("compass_cal start FAILED $e"); onMessage("Compass calibration couldn't start: $e") })
+        return ""
+    }
+
+    fun stopCompassCalibration() {
+        FlightControllerKey.KeyStopCompassCalibration.create().action({ event("compass_cal stopped") }, { e: IDJIError -> event("compass_cal stop FAILED $e") })
     }
 
     /** What DJI Fly would warn about: the drone's own health messages (compass, IMU, no-fly zone, battery...). */

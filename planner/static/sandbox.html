@@ -203,6 +203,11 @@ body.sideHidden #pill { max-width: calc(100% - 300px); }
 #player input[type=text] { font: 15px -apple-system, system-ui, sans-serif; color: var(--t1); background: rgba(255,255,255,.08); border: 0; border-radius: 10px; padding: 10px 12px; text-align: left; }
 #player .prep { flex: 1; display: grid; place-items: center; color: var(--t2); }
 @media (orientation: portrait) { #player { flex-direction: column; } #player aside { width: auto; } }
+#calib { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,.6); display: grid; place-items: center; }
+#calib[hidden] { display: none; }
+.calCard { max-width: 460px; margin: 16px; padding: 20px 22px; border-radius: 22px; text-align: center; }
+.calCard h2 { margin: 0 0 8px; font-size: 20px; } .calCard p { margin: 0 0 14px; color: var(--t2); line-height: 1.45; }
+.calArt { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--accent); }
 #recBtn.on { background: var(--bad); color: #fff; } #followBtn.on { background: var(--accent); color: #fff; }
 #settings h3, #library h3 { font-size: 13px; color: var(--t3); font-weight: 400; margin: 12px 16px 6px; }
 .hrow { display: flex; align-items: center; justify-content: space-between; }
@@ -355,6 +360,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     </div>
   </div>
 </section>
+<div id="calib" hidden><div class="glass calCard"><h2 id="calTitle">Compass calibration</h2><p id="calText"></p><div class="calArt" id="calArt"></div><button class="btn" id="calCancel">Cancel</button></div></div>
 <div id="player" hidden>
   <video id="pVideo" controls playsinline preload="metadata"></video>
   <div class="prep" id="pPrep" hidden>Making a phone-size copy…</div>
@@ -393,6 +399,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
       <h3>Drone</h3>
       <div class="group">
         <div class="set"><span>Fly screen drives<small id="droneInfo">Checking the drone</small></span><div class="seg" id="targetSeg"><button data-v="sim" class="on">Sandbox</button><button data-v="real">Real drone</button></div></div>
+        <div class="set"><span>Compass<small id="compassInfo">Calibrate if the drone reports magnetic interference. Do it outdoors, away from cars, rebar and metal</small></span><button class="btn" id="compassBtn">Calibrate</button></div>
         <div class="set"><span>AI line speed cap<small>Race AI line flies the trained AI's racing line with its speed profile scaled down to this top speed</small></span><select id="aiCap"><option value="2">2 m/s</option><option value="3" selected>3 m/s</option><option value="4">4 m/s</option><option value="6">6 m/s</option><option value="8">8 m/s</option></select></div>
         <div class="set"><span>Follow me<small>Distance and height it keeps from your phone</small></span><span><select id="followDist"><option>5</option><option selected>8</option><option>12</option><option>20</option></select> m · <select id="followHt"><option>4</option><option selected>6</option><option>10</option><option>15</option></select> m up</span></div>
         <div class="set"><span>Obstacle AI<small>Shadow only beeps and logs what the policy would do. Live lets it fly the dodge</small></span><div class="seg" id="aiSeg"><button data-v="off">Off</button><button data-v="shadow" class="on">Shadow</button><button data-v="policy">Live</button></div></div>
@@ -1561,10 +1568,12 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     $('hud').style.color = '';
     const flying = ['FLYING', 'POLICY'].includes(st), held = ['PAUSED', 'HOLD'].includes(st);
     const pi = held ? 'play' : 'pause'; if ($('pauseBtn').dataset.i !== pi) { $('pauseBtn').dataset.i = pi; $('pauseBtn').innerHTML = `<svg class="i"><use href="#i-${pi}"/></svg>`; } $('pauseBtn').disabled = !(flying || held);
+    if (d.connected && !d.flying && (d.compass?.error || /COMPASS/.test(d.device_status || '')) && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st)) S.needCal = true; else S.needCal = false;
     $('aiLineBtn').hidden = !(S.realRace?.ghost && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && d.connected);
     $('recBtn').classList.toggle('on', !!d.capturing); $('recBtn').textContent = d.capturing ? 'Stop rec' : 'Rec';
     const big = $('bigBtn');
-    if (d.landing_confirm) { big.hidden = false; big.textContent = 'Confirm landing'; big.onclick = () => FL.confirmLanding(); }
+    if (S.needCal) { big.hidden = false; big.textContent = 'Calibrate compass'; big.onclick = () => $('compassBtn').click(); }
+    else if (d.landing_confirm) { big.hidden = false; big.textContent = 'Confirm landing'; big.onclick = () => FL.confirmLanding(); }
     else if (st === 'MANUAL') { big.hidden = false; big.textContent = 'Re-arm and continue'; big.onclick = () => FL.rearm(); }
     else if (d.latched) { big.hidden = false; big.textContent = 'Re-arm'; big.onclick = () => FL.rearm(); }
     else if (['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st) && (S.pts.length > 1 || S.realRace) && d.connected) { big.hidden = false; big.textContent = S.realRace ? 'Race for real' : 'Fly for real'; big.onclick = () => flyReal(false); }
@@ -1780,6 +1789,29 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   };
   // Rec (real drone): stream + logs + SD 4K
   if (APP) {
+    // Compass calibration: the drone walks through HORIZONTAL then VERTICAL spins; we show what to do for each.
+    const CAL = {
+      HORIZONTAL: ['Step 1 of 2: hold it level', 'Hold the drone flat at arm\'s length, away from your body and phone, and turn on the spot in a full circle (360°) until this step changes.', 'Level · spin 360°'],
+      VERTICAL: ['Step 2 of 2: nose down', 'Now hold it vertically, nose pointing at the ground, and turn in a full circle (360°) again.', 'Nose down · spin 360°'],
+      SUCCEEDED: ['Calibrated', 'Done. Set the drone down on open ground. If it still reports interference, power-cycle it or move it away from metal.', 'Success'],
+      FAILED: ['Calibration failed', 'Usually metal nearby (car, driveway rebar, phone in the same hand). Move to open ground and try again.', 'Failed'],
+    };
+    let calOn = false;
+    $('compassBtn').onclick = () => {
+      if (!confirm('Calibrate the compass?\n\nDo it outdoors on open ground, away from cars, the driveway and anything metal. The motors must be off. You will turn the drone through two full circles: level, then nose-down.')) return;
+      const e = FL.compassCalibration(true); if (e) return alert(e);
+      calOn = true; $('calib').hidden = false; $('calTitle').textContent = 'Starting…'; $('calText').textContent = 'Waiting for the drone.'; $('calArt').textContent = '';
+    };
+    $('calCancel').onclick = () => { if (calOn && !/SUCCEEDED|FAILED/.test(S.ds?.compass?.state || '')) FL.compassCalibration(false); calOn = false; $('calib').hidden = true; };
+    setInterval(() => {
+      let d; try { d = JSON.parse(FL.status()); } catch { return; }
+      const c = d.compass || {};
+      $('compassInfo').textContent = c.error ? 'The drone reports a compass problem: calibrate it here (outdoors, away from metal)' : 'Calibrate if the drone reports magnetic interference. Do it outdoors, away from cars, rebar and metal';
+      if (!calOn) return;
+      const t = CAL[c.state]; if (!t) return;
+      $('calTitle').textContent = t[0]; $('calText').textContent = t[1]; $('calArt').textContent = t[2];
+      $('calCancel').textContent = /SUCCEEDED|FAILED/.test(c.state) ? 'Close' : 'Cancel';
+    }, 500);
     $('aiLineBtn').onclick = () => flyReal(true);
     { const v = store.get('aiCap'); if (v) $('aiCap').value = v; $('aiCap').onchange = () => store.set('aiCap', $('aiCap').value); }
     for (const id of ['followDist', 'followHt']) { const v = store.get(id); if (v) $(id).value = v; $(id).onchange = () => store.set(id, $(id).value); }
