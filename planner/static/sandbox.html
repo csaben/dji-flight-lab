@@ -1544,6 +1544,11 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     if (d.connected && d.product_type === 'UNKNOWN') [text, color] = ['Close DJI Fly: force-stop it, then replug the RC (it is holding the drone)', 'var(--bad)'];
     // The drone's own warnings (what DJI Fly would show) while it's on the ground.
     if (d.connected && !d.flying && d.health?.length && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st)) [text, color] = [`Drone: ${d.health[0].replace(/ \[.*\]$/, '')}`, 'var(--warn)'];
+    // DJI's device status (e.g. COMPASS_ERROR "Magnetic Field Interference") blocks auto takeoff.
+    if (d.connected && !d.flying && d.device_status && !/^NORMAL/.test(d.device_status) && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st)) {
+      const why = (d.device_status.match(/\((.*)\)/) || [])[1] || d.device_status;
+      [text, color] = [/COMPASS/.test(d.device_status) ? `Drone: ${why} · move it away from metal/cars, power-cycle, or calibrate the compass` : `Drone: ${why}`, 'var(--bad)'];
+    }
     // Black screen? Say whether the drone's video stream is arriving at all.
     if (d.video_packets != null) { if (d.video_packets !== S.vpk) { S.vpk = d.video_packets; S.vpkT = Date.now(); } }
     if (d.connected && d.registered && S.vpkT != null && Date.now() - S.vpkT > 5000 && ['IDLE', 'LOADED', 'DONE', 'ABORTED'].includes(st)) [text, color] = ['No video from the drone yet · check the RC link, or close DJI Fly', 'var(--warn)'];
