@@ -3,7 +3,7 @@ import WebKit
 
 /// StarSplat (Flight Lab for iPhone): the web sandbox (dji.clarksaben.com) full screen. Not signed in -> the gateway's /login page.
 /// No keys are built in; the login cookie lives in the app's own web data store.
-let home = URL(string: "https://dji.clarksaben.com/")!
+let home = URL(string: "https://dji.clarksaben.com/sandbox.html")!   // the same page the Android app opens
 
 @main
 struct FlightLabApp: App {
@@ -67,6 +67,12 @@ final class Nav: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     // Links to other sites open in Safari; everything on the gateway stays in the app.
     func webView(_ w: WKWebView, decidePolicyFor a: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        // The gateway's login sends you to "/" (the route planner): this app lives on the sandbox instead.
+        if let u = a.request.url, u.host == home.host, u.path == "/" || u.path.isEmpty, a.targetFrame?.isMainFrame ?? true {
+            decisionHandler(.cancel)
+            w.load(URLRequest(url: home))
+            return
+        }
         if let u = a.request.url, let host = u.host, host != home.host, a.targetFrame?.isMainFrame ?? true,
            u.scheme == "https" || u.scheme == "http" {
             UIApplication.shared.open(u)
