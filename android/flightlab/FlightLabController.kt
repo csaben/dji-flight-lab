@@ -263,6 +263,16 @@ class FlightLabController(private val context: Context) {
         RemoteControllerKey.KeyStickRightVertical.create().listen(this) { rcRV = it ?: 0; checkRc() }
     }
 
+    /** What DJI Fly would warn about: the drone's own health messages (compass, IMU, no-fly zone, battery...). */
+    fun healthWarnings(): List<String> = try {
+        dji.v5.manager.diagnostic.DeviceHealthManager.getInstance().currentDJIDeviceHealthInfos
+            .map { h -> "${h.title()}${if (h.description().isNullOrBlank() || h.description() == h.title()) "" else ": " + h.description()} [${h.warningLevel()}]" }
+    } catch (t: Throwable) { listOf("health unavailable: $t") }
+
+    fun deviceStatus(): String = try {
+        dji.v5.manager.diagnostic.DeviceStatusManager.getInstance().currentDJIDeviceStatus.let { "${it} (${it.description()})" }
+    } catch (t: Throwable) { "" }
+
     fun sticksCentered() = maxOf(abs(rcLH), abs(rcLV), abs(rcRH), abs(rcRV)) <= RC_DEADBAND
 
     /** Velocity in the body frame (forward, right), from NED velocity and yaw. */
@@ -441,13 +451,17 @@ class FlightLabController(private val context: Context) {
         captureStartNs = now()
         capturing = true
         event("capture_start recordSd=$recordSd")
-        if (recordSd) {
-            CameraKey.KeyCameraMode.create().set(CameraMode.VIDEO_NORMAL)
-            CameraKey.KeyStartRecord.create().action({
-                sdRecording = true; event("sd_record_start ok")
-            }, { e: IDJIError -> event("sd_record_start FAILED $e"); onMessage("SD recording failed to start: $e") })
-        }
+        if (recordSd) startSdRecord()
         onMessage(if (recordSd) "Capturing: stream + GPS log + 4K on SD." else "Capturing: stream + GPS log.")
+    }
+
+    /** 4K to the drone's SD card. Missions call this once airborne, never alongside the takeoff command. A failure only logs. */
+    fun startSdRecord() {
+        if (sdRecording || !capturing) return
+        CameraKey.KeyCameraMode.create().set(CameraMode.VIDEO_NORMAL)
+        CameraKey.KeyStartRecord.create().action({
+            sdRecording = true; event("sd_record_start ok")
+        }, { e: IDJIError -> event("sd_record_start FAILED $e (SD card full or missing?)") })
     }
 
     fun stopCapture() {

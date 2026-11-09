@@ -38,6 +38,9 @@ rsync -a --partial --progress -e "$SSH" "$APK" "$DEST/flightlab.apk"
 # Fast mirror on this Mac (the phone reaches it directly; cradle goes via a Tailscale relay).
 MIRROR="$HERE/dl-mirror"; mkdir -p "$MIRROR"
 cp "$APK" "$MIRROR/flightlab.apk.part" && mv "$MIRROR/flightlab.apk.part" "$MIRROR/flightlab.apk"
+# Keep every published build so a known-good one can be reinstalled (download page: /dl/ on the Mac mirror's archive/).
+mkdir -p "$MIRROR/archive" && cp "$APK" "$MIRROR/archive/flightlab-$name.apk"
+ls -t "$MIRROR"/archive/flightlab-*.apk | tail -n +16 | xargs -r rm -f   # keep the last 15
 # version.json last, so an app never sees a version whose APK isn't fully there yet.
 VJSON=$(python3 -c 'import json,sys; print(json.dumps({"versionCode": int(sys.argv[1]), "versionName": sys.argv[2], "apk": "flightlab.apk", "size": int(sys.argv[3]), "notes": sys.argv[4], "mirrors": [{"name": "Mac", "url": "https://cradle-m1.tailb1b51d.ts.net:8990/flightlab.apk"}]}))' "$code" "$name" "$size" "$notes")
 echo "$VJSON" > "$MIRROR/version.json"

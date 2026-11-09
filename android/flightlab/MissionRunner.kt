@@ -181,13 +181,13 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         seg = 0; progressM = 0.0; cmdE = 0.0; cmdN = 0.0; activePoi = -1; lastGimbalPitch = Double.NaN; gimbalSmooth = Double.NaN; yawRateCmd = 0.0
         if (ctl.logFile == null) ctl.startLogging()
         // Every mission also records the full stream + 50 Hz telemetry (+ SD 4K) for the data flywheel.
-        if (!ctl.capturing) ctl.startCapture(recordSd = true)
+        if (!ctl.capturing) ctl.startCapture(recordSd = false)   // SD 4K starts once airborne (see ARMING)
         pilot?.let { if (it.mode != PilotLink.Mode.OFF) it.connect(m.text) }
         ctl.event("mission_start ${m.name} origin=$lat0,$lon0 home_offset_m=$homeOffsetM pts=${path.size}")
         if (!homeOffsetM.isNaN() && homeOffsetM > HOME_WARN_M) onMessage("Warning: you're ${"%.0f".format(homeOffsetM)} m from the planned A. The route is flown relative to here.")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off…")
-            takeoff { e -> setState(State.ABORTED, "Takeoff failed: $e. The drone refused it; open DJI Fly once to see why (it shows the reason), or take off with the RC and tap again: the app takes over in the air.") }
+            takeoff { e -> setState(State.ABORTED, "Takeoff refused by the drone: $e. Take off with the RC and tap again (the app takes over in the air), or fix what it says.") }
         }
     }
 
@@ -277,6 +277,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     }
 
     private fun arm() {
+        if (ctl.flying) ctl.startSdRecord()
         setState(State.ARMING, "Handing control to the app…")
         ctl.maxHorizontal = mission?.speed ?: 3.0
         if (!(ctl.vsEnabled && ctl.advancedEnabled)) ctl.enableVirtualStick()
@@ -519,7 +520,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         ctl.event("follow_start dist=$followDist height=$followHeight")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off to follow you…")
-            takeoff { e -> following = false; setState(State.ABORTED, "Takeoff failed: $e. The drone refused it; open DJI Fly once to see why (it shows the reason), or take off with the RC and tap again: the app takes over in the air.") }
+            takeoff { e -> following = false; setState(State.ABORTED, "Takeoff refused by the drone: $e. Take off with the RC and tap again (the app takes over in the air), or fix what it says.") }
         }
     }
 
@@ -596,8 +597,10 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     private fun takeoff(onFail: (Any) -> Unit) {
         fun attempt(n: Int) {
             FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok (attempt $n)") }, { e ->
-                ctl.event("takeoff refused (attempt $n): $e · mode=${ctl.flightModeString} fc=${ctl.fcFlightMode} motors=${ctl.motorsOn} flying=${ctl.flying} sats=${ctl.gpsSats} batt=${ctl.battery} vs=${ctl.vsEnabled} wind=${ctl.windWarning}")
-                if (n == 1 && state == State.TAKEOFF) exec.schedule({ if (state == State.TAKEOFF) attempt(2) }, 1500, TimeUnit.MILLISECONDS) else onFail(e)
+                val health = ctl.healthWarnings()
+                ctl.event("takeoff refused (attempt $n): $e · mode=${ctl.flightModeString} fc=${ctl.fcFlightMode} motors=${ctl.motorsOn} flying=${ctl.flying} sats=${ctl.gpsSats} batt=${ctl.battery} vs=${ctl.vsEnabled} wind=${ctl.windWarning} · status=${ctl.deviceStatus()} · health=${health}")
+                if (n == 1 && state == State.TAKEOFF) exec.schedule({ if (state == State.TAKEOFF) attempt(2) }, 1500, TimeUnit.MILLISECONDS)
+                else onFail(if (health.isNotEmpty()) "${health.joinToString("; ")} ($e)" else e)
             })
         }
         attempt(1)

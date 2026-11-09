@@ -316,6 +316,7 @@ class AppActivity : Activity() {
                 .put("latched", c.latched).put("latch_reason", c.latchReason).put("vs", c.vsEnabled)
                 .put("capturing", c.capturing).put("upload", c.uploadStatus).put("video_packets", c.videoPackets)
                 .put("video_view", video.visibility == View.VISIBLE)
+                .put("health", org.json.JSONArray(c.healthWarnings())).put("device_status", c.deviceStatus())
                 .put("home", try { FlightControllerKey.KeyHomeLocation.create().get()?.let { h -> JSONObject().put("lat", h.latitude).put("lon", h.longitude) } ?: JSONObject.NULL } catch (_: Throwable) { JSONObject.NULL })
                 .put("follow", JSONObject().put("on", r.following).put("info", r.followInfo)
                     .put("phone_acc", n(PhoneGps.acc)).put("phone_age_s", n(PhoneGps.ageS().coerceAtMost(9999.0))))
