@@ -1,0 +1,93 @@
+<title>StarSplat Icons</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  /* Layout: a sky-coloured header, then a grid of icon cards; each card shows the icon large and on a home-screen row. */
+  :root {
+    --bg: #eef3fa; --surface: #ffffff; --ink: #121a2e; --muted: #5a6680; --line: #d6dfec;
+    --accent: #d62a40; --wall: linear-gradient(160deg, #2a3a78, #6b4b93 55%, #e07a7a);
+    --display: "Unbounded", "Avenir Next", system-ui, sans-serif;
+    --body: "IBM Plex Sans", system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg: #0b1024; --surface: #141b36; --ink: #eef2fb; --muted: #9aa6c4; --line: #26304f; --accent: #ff5a6e; color-scheme: dark } }
+  :root[data-theme="dark"] { --bg: #0b1024; --surface: #141b36; --ink: #eef2fb; --muted: #9aa6c4; --line: #26304f; --accent: #ff5a6e; color-scheme: dark }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-block: 36px 56px;
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  header { display: grid; gap: 6px; margin-bottom: 28px; }
+  h1 { font: 700 clamp(26px, 4vw, 38px)/1.1 var(--display); margin: 0; letter-spacing: -0.01em; text-wrap: balance; }
+  h2 { font: 500 13px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 30px 0 12px; }
+  .pixel .big, .pixel .app img { image-rendering: pixelated; }
+  header p { margin: 0; color: var(--muted); max-width: 62ch; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 18px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 18px; display: grid; gap: 14px;
+    cursor: pointer; transition: border-color .15s, transform .15s; text-align: left; font: inherit; color: inherit; }
+  .card:hover { transform: translateY(-2px); }
+  .card:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+  .card[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+  .big { width: 100%; max-width: 100%; aspect-ratio: 1; border-radius: 22.4%; display: block;
+    box-shadow: 0 10px 30px rgba(10, 20, 50, .25); }
+  .row { display: flex; align-items: center; gap: 14px; }
+  .tag { font: 500 13px var(--mono); color: var(--accent); letter-spacing: .06em; }
+  .name { font: 500 19px/1.2 var(--display); }
+  .note { color: var(--muted); margin: 2px 0 0; }
+  .home { background: var(--wall); border-radius: 14px; padding: 14px 16px; display: flex; justify-content: space-around; gap: 8px; }
+  .app { display: grid; justify-items: center; gap: 5px; color: #fff; font: 500 11px var(--body); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .app img { width: 60px; height: 60px; border-radius: 22.4%; }
+  .app .small { width: 40px; height: 40px; }
+  .ghost { width: 60px; height: 60px; border-radius: 22.4%; background: rgba(255,255,255,.22); }
+  .pick { font: 500 14px var(--body); color: var(--muted); }
+  .card[aria-pressed="true"] .pick { color: var(--accent); }
+  footer { margin-top: 26px; color: var(--muted); }
+  footer b { color: var(--ink); }
+  @media (prefers-reduced-motion: reduce) { .card { transition: none; } .card:hover { transform: none; } }
+</style>
+<div class="wrap">
+  <header>
+    <h1>StarSplat icons</h1>
+    <p>An original red and white swept-wing glider, drawn two ways: as a pixel-art sprite and as low-poly glass. Tap one to mark it, then tell Claude its code.</p>
+  </header>
+  <h2>Pixel art</h2>
+  <div class="grid" id="grid-pixel"></div>
+  <h2>Low poly</h2>
+  <div class="grid" id="grid"></div>
+  <footer id="foot">Nothing picked yet.</footer>
+</div>
+<script src="icons.js"></script>
+<script src="pixel.js"></script>
+<script>
+  const ALL = [...PixelIcons.PIXEL, ...StarIcons.VARIANTS];
+  const grid = document.getElementById('grid'), foot = document.getElementById('foot');
+  const url = v => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(StarIcons.svgOf(v));
+  let picked = null;
+  try { picked = localStorage.getItem('pick'); } catch (e) {}
+  function card(v, u, into, pixel) {
+    const b = document.createElement('button');
+    b.className = 'card' + (pixel ? ' pixel' : ''); b.id = 'card-' + v.id; b.type = 'button';
+    b.innerHTML = `<img class="big" src="${u}" alt="Icon ${v.id}: ${v.name}">
+      <div><div class="row"><span class="tag">${v.id}</span><span class="name">${v.name}</span></div><p class="note">${v.note}</p></div>
+      <div class="home"><div class="ghost"></div><div class="app"><img src="${u}" alt="">StarSplat</div><div class="ghost"></div>
+        <div class="app"><img class="small" src="${u}" alt="">Spotlight</div></div>
+      <span class="pick">Tap to pick ${v.id}</span>`;
+    b.onclick = () => { picked = v.id; try { localStorage.setItem('pick', v.id); } catch (e) {} render(); };
+    into.appendChild(b);
+  }
+  for (const v of StarIcons.VARIANTS) card(v, url(v), grid, false);
+  (async () => {
+    const gp = document.getElementById('grid-pixel');
+    for (const v of [...PixelIcons.PIXEL.slice(5), ...PixelIcons.PIXEL.slice(0, 5)]) card(v, (await PixelIcons.render(v, 512)).toDataURL('image/png'), gp, true);
+    render();
+  })();
+  function render() {
+    for (const v of ALL) {
+      const c = document.getElementById('card-' + v.id); if (!c) continue; const on = picked === v.id;
+      c.setAttribute('aria-pressed', on); c.querySelector('.pick').textContent = on ? `Picked ${v.id}` : `Tap to pick ${v.id}`;
+    }
+    const v = ALL.find(x => x.id === picked);
+    foot.innerHTML = v ? `You picked <b>${v.id} · ${v.name}</b>. Tell Claude "${v.id}" and it goes on the next TestFlight build.` : 'Nothing picked yet.';
+  }
+  render();
+</script>
