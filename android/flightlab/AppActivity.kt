@@ -126,7 +126,6 @@ class AppActivity : Activity() {
         if (need.isNotEmpty()) requestPermissions(need.toTypedArray(), REQ_LOC)
         ui.postDelayed({ checkForUpdate(manual = false) }, 2500)
         ui.post(waitForSdk)
-        ui.postDelayed(videoWatch, 3000)
     }
 
     /** The drone side starts once the DJI SDK has registered (it initialises in the Application). */
@@ -152,7 +151,6 @@ class AppActivity : Activity() {
         val (h, w, hgt) = surf ?: return
         if (!h.surface.isValid) return
         try {
-            streams.removeCameraStreamSurface(h.surface)
             streams.putCameraStreamSurface(ComponentIndexType.LEFT_OR_MAIN, h.surface, w, hgt, ICameraStreamManager.ScaleType.CENTER_CROP)
         } catch (t: Throwable) { android.util.Log.w("FlightLab", "video attach failed", t) }
     }
@@ -160,12 +158,7 @@ class AppActivity : Activity() {
     private var lastPkts = -1L; private var stalls = 0
     private val videoWatch = object : Runnable {
         override fun run() {
-            if (video.visibility == View.VISIBLE && Lab.isReady) {
-                val pk = Lab.ctl.videoPackets
-                if (pk == lastPkts) { if (++stalls >= 2) { stalls = 0; attachVideo() } } else stalls = 0
-                lastPkts = pk
-            }
-            ui.postDelayed(this, 3000)
+            // Disabled: re-binding the surface on a timer made the picture flicker/black. Kept as a no-op.
         }
     }
     private var pendingAi: String? = null

@@ -436,7 +436,7 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
   }
   const localOn = () => !!(S.local && S.local.scene === S.scene && !S.real && !(S.watch && typeof S.watch === 'object') && !(S.gatesKey && (S.run || (S.placing && S.kind === 'race'))));
   async function loadLocal() {
-    if (!window.PhoneSim || !S.scene || store.get('localSim') === '0') return;
+    if (!window.PhoneSim || !S.scene || store.get('localSim') === '0' || S.real) return;
     if (S.local?.scene === S.scene || S.localLoading === S.scene) return;
     const name = S.scene; S.localLoading = name;
     try {
@@ -1513,6 +1513,8 @@ ul.rows li.note { font-size: 13px; color: var(--t3); }
     $('targetSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.v === (S.real ? 'real' : 'sim')));
     $('realBtns').hidden = !S.real; $('padL').hidden = $('padR').hidden = S.real;
     if (APP) FL.video(S.real);
+    if (S.real && S.local) { S.local.dispose(); S.local = null; }   // keep the WebView see-through over the drone video
+    if (!S.real) loadLocal?.();
     if (S.real && ['flying', 'paused'].includes(S.mode)) pause();   // hold the sim drone while you fly the real one
     $('go').textContent = S.real ? 'Fly for real' : 'Fly in sandbox';
   }

@@ -187,7 +187,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         if (!homeOffsetM.isNaN() && homeOffsetM > HOME_WARN_M) onMessage("Warning: you're ${"%.0f".format(homeOffsetM)} m from the planned A. The route is flown relative to here.")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off…")
-            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> setState(State.ABORTED, "Takeoff failed: $e. The drone refused the app's takeoff (often DJI's no-fly-zone lock near airports). Take off with the RC, then tap again: the app takes over in the air.") })
+            takeoff { e -> setState(State.ABORTED, "Takeoff failed: $e. The drone refused it; open DJI Fly once to see why (it shows the reason), or take off with the RC and tap again: the app takes over in the air.") }
         }
     }
 
@@ -519,7 +519,7 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
         ctl.event("follow_start dist=$followDist height=$followHeight")
         if (ctl.flying) arm() else {
             setState(State.TAKEOFF, "Taking off to follow you…")
-            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok") }, { e -> following = false; setState(State.ABORTED, "Takeoff failed: $e. The drone refused the app's takeoff (often DJI's no-fly-zone lock near airports). Take off with the RC, then tap again: the app takes over in the air.") })
+            takeoff { e -> following = false; setState(State.ABORTED, "Takeoff failed: $e. The drone refused it; open DJI Fly once to see why (it shows the reason), or take off with the RC and tap again: the app takes over in the air.") }
         }
     }
 
@@ -590,6 +590,17 @@ class MissionRunner(private val ctl: FlightLabController, private val cacheDir: 
     private fun bodySetpoint(vU: Double, yawRate: Double): FlightLabController.Setpoint {
         val y = Math.toRadians(ctl.yaw)
         return FlightLabController.Setpoint(fwd = cmdN * cos(y) + cmdE * sin(y), right = -cmdN * sin(y) + cmdE * cos(y), up = vU, yawRate = yawRate)
+    }
+
+    /** Auto takeoff; one retry after 1.5 s (the flight controller sometimes rejects the first request), with its state logged. */
+    private fun takeoff(onFail: (Any) -> Unit) {
+        fun attempt(n: Int) {
+            FlightControllerKey.KeyStartTakeoff.create().action({ ctl.event("takeoff ok (attempt $n)") }, { e ->
+                ctl.event("takeoff refused (attempt $n): $e · mode=${ctl.flightModeString} fc=${ctl.fcFlightMode} motors=${ctl.motorsOn} flying=${ctl.flying} sats=${ctl.gpsSats} batt=${ctl.battery} vs=${ctl.vsEnabled} wind=${ctl.windWarning}")
+                if (n == 1 && state == State.TAKEOFF) exec.schedule({ if (state == State.TAKEOFF) attempt(2) }, 1500, TimeUnit.MILLISECONDS) else onFail(e)
+            })
+        }
+        attempt(1)
     }
 
     // ---- helpers -------------------------------------------------------------------------------
